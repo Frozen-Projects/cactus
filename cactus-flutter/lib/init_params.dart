@@ -32,6 +32,19 @@ class CactusInitParams {
   /// This is used in conjunction with the main model file for vision capabilities.
   final String? mmprojPath;
 
+  /// Optional URL from which to download the multimodal projector file.
+  ///
+  /// If provided, the mmproj file will be downloaded to the application's documents directory.
+  /// Either [mmprojPath] or [mmprojUrl] should be provided if an mmproj file is needed.
+  /// If both are null, no mmproj file will be loaded.
+  final String? mmprojUrl;
+
+  /// Optional filename to use when saving an mmproj file downloaded via [mmprojUrl].
+  ///
+  /// If null or empty, the filename is inferred from the last segment of the [mmprojUrl].
+  /// A default name like "downloaded_mmproj.gguf" is used if inference fails.
+  final String? mmprojFilename;
+
   /// Optional custom chat template string (e.g., a Jinja2-like format).
   ///
   /// If null or empty, the native layer will attempt to use a default template
@@ -142,6 +155,23 @@ class CactusInitParams {
   /// which includes model download (if applicable) and native context setup.
   final OnInitProgress? onInitProgress;
 
+  /// Whether to perform a warmup run after model loading to pre-initialize GPU kernels
+  /// and other components. This can reduce the latency of the first inference request.
+  /// Corresponds to the `warmup` field in the native parameters.
+  /// Defaults to false.
+  final bool warmup;
+
+  /// Whether to attempt to use the GPU for the multimodal projector (mmproj) model,
+  /// if one is loaded and GPU support is active.
+  /// Corresponds to the `mmproj_use_gpu` field in the native parameters.
+  /// Defaults to true (assuming if GPU is used for main model, it might be for mmproj too).
+  final bool mmprojUseGpu;
+
+  /// The index of the main GPU to use for model offloading, relevant in multi-GPU setups.
+  /// Corresponds to the `main_gpu` field in the native parameters.
+  /// Defaults to 0.
+  final int mainGpu;
+
   /// Creates parameters for [CactusContext] initialization.
   ///
   /// At least one of [modelPath] or [modelUrl] must be provided.
@@ -151,11 +181,13 @@ class CactusInitParams {
     this.modelUrl,
     this.modelFilename,
     this.mmprojPath,
+    this.mmprojUrl,
+    this.mmprojFilename,
     this.chatTemplate,
     this.contextSize = 512,
     this.batchSize = 512,
     this.ubatchSize = 512,
-    this.gpuLayers,
+    this.gpuLayers = 0,
     this.threads = 4,
     this.useMmap = true,
     this.useMlock = false,
@@ -166,12 +198,18 @@ class CactusInitParams {
     this.cacheTypeK,
     this.cacheTypeV,
     this.onInitProgress,
+    this.warmup = false,
+    this.mmprojUseGpu = false,
+    this.mainGpu = 0,
   }) {
     if (modelPath == null && modelUrl == null) {
-      throw ArgumentError('Either modelPath or modelUrl must be provided.');
+      throw ArgumentError('Either modelPath or modelUrl must be provided for the main model.');
     }
     if (modelPath != null && modelUrl != null) {
-      throw ArgumentError('Cannot provide both modelPath and modelUrl. Choose one.');
+      throw ArgumentError('Cannot provide both modelPath and modelUrl. Choose one for the main model.');
+    }
+    if (mmprojPath != null && mmprojUrl != null) {
+      throw ArgumentError('Cannot provide both mmprojPath and mmprojUrl. Choose one for the multimodal projector.');
     }
   }
 } 
