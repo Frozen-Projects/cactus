@@ -122,8 +122,7 @@ class InferenceService {
 
     final CactusCompletionParams completionParams = CactusCompletionParams(
       messages: [
-        ChatMessage(role: 'system', content: 'You are an image analyst. Your task is to provide short, concise descriptions of the scene in the frame.'),
-        ChatMessage(role: 'user', content: '<__image__>Describe the frame.')
+        ChatMessage(role: 'user', content: '<__image__>What do you see?')
       ],
       imagePath: imageFile.path,
       maxPredictedTokens: 20,

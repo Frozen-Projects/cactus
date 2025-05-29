@@ -12,7 +12,7 @@ class CameraService {
     if (_cameras.isEmpty) return;
     
     _controller = CameraController(
-      _cameras[0], 
+      _cameras[1], 
       ResolutionPreset.low,
       enableAudio: false,
       imageFormatGroup: ImageFormatGroup.bgra8888
