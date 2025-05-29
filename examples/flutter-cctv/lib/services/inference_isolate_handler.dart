@@ -46,14 +46,20 @@ void inferenceIsolateEntry(Map<String, dynamic> message) async {
             ChatMessage(role: 'user', content: '<__image__>What do you see?')
           ],
           imagePath: imagePath,
-          maxPredictedTokens: 20,
+          maxPredictedTokens: 50,
           stopSequences: ['<end_of_utterance>'],
+          onNewToken: (token) {
+            mainSendPort.send({'type': 'INFERENCE_PARTIAL', 'data': token});
+            return true;
+          }
         );
 
-        final result = await _cactusContext!.completion(completionParams);
+        final result = await _cactusContext!.completion(
+          completionParams,
+        );
         print('Inference complete: ${result.text}');
 
-        mainSendPort.send({'type': 'RESULT', 'data': result.text});
+        mainSendPort.send({'type': 'INFERENCE_COMPLETE', 'data': result.text});
       } catch (e, s) {
         print('[Isolate] FATAL: Error processing message: $e\n$s');
         mainSendPort.send({'type': 'ERROR_INFERENCE', 'error': e.toString(), 'stack': s.toString()});

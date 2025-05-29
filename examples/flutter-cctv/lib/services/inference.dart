@@ -11,8 +11,10 @@ class InferenceService {
   Isolate? _inferenceIsolate;
   SendPort? _isolateSendPort;
   final ReceivePort _mainReceivePort = ReceivePort();
-  Function(String)? onResult;
+  Function(String)? onCompleteResult;
+  Function(String)? onPartialResult;
 
+  bool _isFirstPartialResult = true;
   bool _isProcessing = false;
   bool _isIsolateReady = false;
   
@@ -57,11 +59,15 @@ class InferenceService {
         if (type == 'INITIALIZED') {
           _isIsolateReady = true;
           timer.log('[Main] Inference isolate reported: MODEL INITIALIZED.');
-        } else if (type == 'RESULT') {
+        } else if (type == 'INFERENCE_COMPLETE') {
           final String resultData = message['data'] as String;
           timer.log('Received inference result from isolate: $resultData');
-          onResult?.call(resultData);
+          onCompleteResult?.call(resultData);
+          _isFirstPartialResult = true;
           _isProcessing = false; // Ready for next frame
+        } else if (type == 'INFERENCE_PARTIAL') {
+          final String resultData = message['data'] as String;
+          onPartialResult?.call(resultData);
         } else if (type.contains('ERROR')) {
           if(type == 'ERROR_INIT') _isIsolateReady = false; // Model init failed
           final String errorMsg = message['error']?.toString() ?? message['message']?.toString() ?? 'Unknown error';

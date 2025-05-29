@@ -16,6 +16,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isCapturing = false;
   bool _showDebug = false;
   String _analysisResult = '';
+  bool _isNewAnalysisSession = true; // Flag to track new analysis session
   final CameraService _cameraService = CameraService();
   final InferenceService _inferenceService = InferenceService();
 
@@ -28,14 +29,28 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _initializeServices() async {
-    await _cameraService.initialize();
+    await _cameraService.initialize(initialCameraIndex: 0);
+    if (mounted) {
+      setState(() {});
+    }
     timer.log('Camera initialized');
     await _inferenceService.initialize();
-    _inferenceService.onResult = (result) {
+    _inferenceService.onCompleteResult = (result) {
       if (mounted) { // Ensure widget is still in the tree
         setState(() {
-          timer.log('[DEBUG] Inference result: $result');
           _analysisResult = result;
+          _isNewAnalysisSession = true; // Prepare for the next session
+        });
+      }
+    };
+    _inferenceService.onPartialResult = (result) {
+      if (mounted) { // Ensure widget is still in the tree
+        setState(() {
+          if (_isNewAnalysisSession) {
+            _analysisResult = ''; // Clear previous result on first partial token
+            _isNewAnalysisSession = false; // Subsequent partials for this session will append
+          }
+          _analysisResult += result;
         });
       }
     };
@@ -64,14 +79,37 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             Expanded(
               flex: 75,
-              child: _cameraService.controller?.value.isInitialized == true 
-                ? FittedBox(
-                    fit: BoxFit.cover,
-                    child: SizedBox(
-                      width: _cameraService.controller!.value.previewSize!.height,
-                      height: _cameraService.controller!.value.previewSize!.width,
-                      child: CameraPreview(_cameraService.controller!),
-                    ),
+              child: _cameraService.controller?.value.isInitialized == true
+                ? Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      FittedBox(
+                        fit: BoxFit.cover,
+                        child: SizedBox(
+                          width: _cameraService.controller!.value.previewSize!.height,
+                          height: _cameraService.controller!.value.previewSize!.width,
+                          child: CameraPreview(_cameraService.controller!),
+                        ),
+                      ),
+                      Positioned(
+                        bottom: 16.0,
+                        right: 16.0,
+                        child: FloatingActionButton.small(
+                          onPressed: () async {
+                            if (!_cameraService.isReady || _cameraService.controller == null) {
+                               print("Camera service not fully ready or no controller available to flip.");
+                               return;
+                            }
+                            await _cameraService.flipCamera();
+                            if (mounted) {
+                              setState(() {}); 
+                            }
+                          },
+                          backgroundColor: Colors.black.withValues(alpha: .5),
+                          child: Icon(Icons.flip_camera_ios, color: Colors.white),
+                        ),
+                      ),
+                    ],
                   )
                 : const Center(child: Text('No camera')),
             ),
@@ -119,8 +157,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     )
                     : FloatingActionButton.small(
                       onPressed: () async {
+                        setState(() {
+                          _isCapturing = true;
+                          _isNewAnalysisSession = true; // Mark start of a new analysis session
+                        });
                         await _cameraService.beginCapture(_inferenceService.analyzeFrame);
-                        setState(() => _isCapturing = !_isCapturing);
                       },
                       backgroundColor: Colors.green,
                       child: Icon(Icons.play_arrow),
