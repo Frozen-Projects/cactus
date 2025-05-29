@@ -31,6 +31,14 @@ class _HomeScreenState extends State<HomeScreen> {
     await _cameraService.initialize();
     timer.log('Camera initialized');
     await _inferenceService.initialize();
+    _inferenceService.onResult = (result) {
+      if (mounted) { // Ensure widget is still in the tree
+        setState(() {
+          timer.log('[DEBUG] Inference result: $result');
+          _analysisResult = result;
+        });
+      }
+    };
     timer.log('Inference initialized');
   }
 
@@ -39,14 +47,6 @@ class _HomeScreenState extends State<HomeScreen> {
     _cameraService.dispose();
     timer.log('Camera disposed');
     super.dispose();
-  }
-
-  Future<void> _onCaptureStartCallback(CameraImage image) async {
-    final result = await _inferenceService.inferenceCallback(image);
-    if (result != null) {
-      timer.log('Inference result: $result (in _onCaptureStartCallback!)');
-      setState(() => _analysisResult = result);
-    }
   }
 
   @override
@@ -119,7 +119,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     )
                     : FloatingActionButton.small(
                       onPressed: () async {
-                        await _cameraService.beginCapture(_onCaptureStartCallback);
+                        await _cameraService.beginCapture(_inferenceService.analyzeFrame);
                         setState(() => _isCapturing = !_isCapturing);
                       },
                       backgroundColor: Colors.green,
