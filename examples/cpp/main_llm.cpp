@@ -24,6 +24,7 @@ struct GenerationResult {
 };
 
 GenerationResult generateText(cactus::cactus_context& context, const std::string& prompt, int max_tokens = 100) {
+    context.generated_text.clear();
     auto start_time = std::chrono::high_resolution_clock::now();
     
     context.params.prompt = prompt;
@@ -53,6 +54,8 @@ GenerationResult generateText(cactus::cactus_context& context, const std::string
     }
     
     auto end_time = std::chrono::high_resolution_clock::now();
+
+    context.endCompletion();
     
     auto total_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
     auto ttft = first_token ? std::chrono::milliseconds(0) : 
@@ -64,8 +67,7 @@ GenerationResult generateText(cactus::cactus_context& context, const std::string
 void demonstrateBasicGeneration(cactus::cactus_context& context) {
     std::cout << "\n=== Basic Text Generation Demo ===" << std::endl;
     
-    // Show both approaches for comparison
-    std::cout << "\n--- Traditional Approach ---" << std::endl;
+    std::cout << "\n--- Single Turn Generation ---" << std::endl;
     std::vector<std::string> prompts = {
         "The future of artificial intelligence is",
         "Write a short story about a robot who discovers emotions:"
@@ -73,28 +75,42 @@ void demonstrateBasicGeneration(cactus::cactus_context& context) {
     
     for (const auto& prompt : prompts) {
         std::cout << "\nPrompt: " << prompt << std::endl;
+        context.rewind();
         std::cout << "Response: " << generateText(context, prompt, 100).text << std::endl;
         std::cout << std::string(60, '-') << std::endl;
     }
     
-    // Clear and show new conversation API
-    context.clearConversation();
+    context.rewind();
     
-    std::cout << "\n--- New Conversation API ---" << std::endl;
+    std::cout << "\n--- Multi-Turn Conversation ---" << std::endl;
     std::vector<std::string> messages = {
         "Hello! How are you?",
         "What can you help me with?",
         "Tell me a fun fact about space"
     };
     
+    bool first_message = true;
     for (const auto& message : messages) {
         std::cout << "\nUser: " << message << std::endl;
-        auto start = std::chrono::high_resolution_clock::now();
         
-        auto result = context.continueConversation(message, 150);
+        std::string prompt;
+        json msgs = json::array();
+        msgs.push_back({{"role", "user"}, {"content", message}});
+
+        if (first_message) {
+            prompt = context.getFormattedChat(msgs.dump(), "");
+            first_message = false;
+        } else {
+            std::string user_part = context.getFormattedChat(msgs.dump(), "");
+            size_t assistant_start = user_part.find("<|im_start|>assistant");
+            if (assistant_start != std::string::npos) {
+                prompt = user_part.substr(0, assistant_start) + "<|im_start|>assistant\n";
+            } else {
+                prompt = user_part;
+            }
+        }
         
-        auto end = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+        auto result = generateText(context, prompt, 150);
         
         std::cout << "Bot: " << result.text << std::endl;
         
@@ -107,9 +123,6 @@ void demonstrateBasicGeneration(cactus::cactus_context& context) {
             std::cout << ", Speed: " << std::fixed << std::setprecision(1) << tokens_per_second << " tok/s";
         }
         
-        if (context.isConversationActive()) {
-            std::cout << ", Conversation Active";
-        }
         std::cout << ")" << std::endl;
         std::cout << std::string(60, '-') << std::endl;
     }
@@ -120,6 +133,7 @@ void demonstrateChatMode(cactus::cactus_context& context) {
     std::cout << "Type 'quit' to exit, 'clear' to reset conversation" << std::endl;
     
     std::string input;
+    bool first_message = true;
     
     while (true) {
         std::cout << "\nYou: ";
@@ -130,19 +144,34 @@ void demonstrateChatMode(cactus::cactus_context& context) {
         }
         
         if (input == "clear") {
-            context.clearConversation();
+            context.rewind();
+            first_message = true;
             std::cout << "Conversation cleared." << std::endl;
             continue;
         }
         
         if (input.empty()) continue;
         
-        auto start_time = std::chrono::high_resolution_clock::now();
+        std::string prompt;
+        json msgs = json::array();
+        msgs.push_back({{"role", "user"}, {"content", input}});
+
+        if (first_message) {
+            prompt = context.getFormattedChat(msgs.dump(), "");
+            first_message = false;
+        } else {
+            std::string user_part = context.getFormattedChat(msgs.dump(), "");
+            size_t assistant_start = user_part.find("<|im_start|>assistant");
+            if (assistant_start != std::string::npos) {
+                prompt = user_part.substr(0, assistant_start) + "<|im_start|>assistant\n";
+            } else {
+                prompt = user_part;
+            }
+        }
         
-        auto result = context.continueConversation(input, 200);
+        auto result = generateText(context, prompt, 200);
         
         auto end_time = std::chrono::high_resolution_clock::now();
-        auto total_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
         
         std::cout << "Bot: " << result.text << std::endl;
         std::cout << "(TTFT: " << result.time_to_first_token.count() << "ms, "
@@ -187,6 +216,7 @@ void demonstrateSamplingVariations(cactus::cactus_context& context) {
         context.params.sampling.top_p = config.top_p;
         context.params.sampling.penalty_repeat = config.repeat_penalty;
         
+        context.rewind();
         auto result = generateText(context, prompt, 80);
         std::cout << "Response: " << result.text << std::endl;
         std::cout << std::string(60, '-') << std::endl;
@@ -246,14 +276,13 @@ int main(int argc, char **argv) {
             demonstrateBasicGeneration(context);
         } else {
             std::cout << "\nAvailable demos:" << std::endl;
-            std::cout << "  ./cactus_llm basic    - Compare traditional vs new conversation API" << std::endl;
-            std::cout << "  ./cactus_llm chat     - Interactive chat with optimized KV caching" << std::endl;
+            std::cout << "  ./cactus_llm basic    - Basic and conversational text generation" << std::endl;
+            std::cout << "  ./cactus_llm chat     - Interactive chat with KV caching" << std::endl;
             std::cout << "  ./cactus_llm sampling - Different sampling strategies" << std::endl;
-            std::cout << "\nNew Conversation API Features:" << std::endl;
+            std::cout << "\nFeatures:" << std::endl;
+            std::cout << "  - Manual conversation management" << std::endl;
             std::cout << "  - Automatic KV cache optimization" << std::endl;
-            std::cout << "  - Consistent TTFT regardless of conversation length" << std::endl;
-            std::cout << "  - Simple context.continueConversation(message) interface" << std::endl;
-            std::cout << "  - Built-in conversation state management" << std::endl;
+            std::cout << "  - Low-level control over generation" << std::endl;
             std::cout << "\nRunning basic demo by default...\n" << std::endl;
             
             demonstrateBasicGeneration(context);

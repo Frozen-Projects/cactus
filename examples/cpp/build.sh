@@ -5,4 +5,4 @@ make
 
 ln -sf ../../../cactus/ggml-llama.metallib default.metallib
 
-./cactus_conversation_ffi
+./cactus_llm chat
