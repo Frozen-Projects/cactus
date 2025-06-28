@@ -36,12 +36,11 @@ void run_conversation_demo(cactus_context_handle_t handle) {
     std::cout << "NOTE: This demo mirrors the formatting logic from main_llm.cpp" << std::endl;
 
     std::vector<std::string> user_prompts = {
-        "Hello! How are you today?",
-        "What can you help me with?",
-        "Tell me a fun fact about space"
+        "Hi there! Can you tell me about the history of personal computing?",
+        "That's fascinating. What were some of the key breakthroughs in the 1980s?",
+        "Excellent summary. Finally, what do you see as the next major evolution in computing?"
     };
 
-    std::string prompt_so_far;
     bool first_turn = true;
 
     for (const auto &prompt : user_prompts) {
@@ -57,26 +56,25 @@ void run_conversation_demo(cactus_context_handle_t handle) {
             continue;
         }
 
-        std::string user_part = formatted;
+        std::string prompt_to_send = formatted;
         cactus_free_string_c(formatted);
 
-        if (first_turn) {
-            prompt_so_far = user_part; // full prompt with assistant tag
-            first_turn = false;
-        } else {
-            // strip everything after assistant start so we only append user block
-            size_t assistant_pos = user_part.find("<|im_start|>assistant");
+        if (!first_turn) {
+            // On subsequent turns, we only need to send the user part, not the full history.
+            // The core C++ context is stateful and remembers the prior conversation.
+            size_t assistant_pos = prompt_to_send.find("<|im_start|>assistant");
             if (assistant_pos != std::string::npos) {
-                user_part = user_part.substr(0, assistant_pos) + "<|im_start|>assistant\n";
+                prompt_to_send = prompt_to_send.substr(0, assistant_pos) + "<|im_start|>assistant\n";
             }
-            prompt_so_far += user_part;
         }
+        first_turn = false;
+
 
         // Setup completion params
         first_token_received = false;
         cactus_completion_params_c_t comp_params = {};
-        comp_params.prompt = user_part.c_str();
-        comp_params.n_predict = 150;
+        comp_params.prompt = prompt_to_send.c_str();
+        comp_params.n_predict = 250;
         comp_params.temperature = 0.7;
         comp_params.seed = -1;
         const char *stop_sequences[] = {"<|im_end|>", "</s>"};
@@ -98,10 +96,8 @@ void run_conversation_demo(cactus_context_handle_t handle) {
         std::string assistant_reply = result.text ? result.text : "";
         std::cout << "Assistant: " << assistant_reply << std::endl;
 
-        // Append assistant reply to prompt history so that future turns have context
-        prompt_so_far += "<|im_start|>assistant\n";
-        prompt_so_far += assistant_reply;
-        prompt_so_far += "<|im_end|>\n";
+        // Note: We no longer need to manually track the full prompt string.
+        // The state is managed internally by the cactus_context.
 
         long long ttft_ms = first_token_received ? std::chrono::duration_cast<std::chrono::milliseconds>(first_token_time - start).count() : 0;
         std::cout << "[PERFORMANCE] TTFT: " << ttft_ms << "ms, Total: " << total_ms << "ms, Tokens: " << result.tokens_predicted;
