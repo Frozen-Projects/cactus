@@ -6,90 +6,116 @@
 
 #include "utils.h"
 #include "../../cactus/cactus_ffi.h"
+#include "../../cactus/json.hpp"
+using json = nlohmann::ordered_json;
 
-void print_performance_metrics(const cactus_conversation_result_c_t& result) {
-    std::cout << "[PERFORMANCE] TTFT: " << result.time_to_first_token << "ms, "
-              << "Total: " << result.total_time << "ms, "
-              << "Tokens: " << result.tokens_generated;
-    
-    if (result.tokens_generated > 0 && result.total_time > 0) {
-        float tokens_per_second = (float)result.tokens_generated * 1000.0f / result.total_time;
-        std::cout << ", Speed: " << std::fixed << std::setprecision(1) 
-                  << tokens_per_second << " tok/s";
+std::chrono::high_resolution_clock::time_point first_token_time;
+bool first_token_received = false;
+
+bool token_callback(const char* token_text) {
+    if (!first_token_received) {
+        first_token_time = std::chrono::high_resolution_clock::now();
+        first_token_received = true;
     }
-    std::cout << std::endl;
+    return true;
 }
 
-bool conversation_demo(cactus_context_handle_t handle) {
-    std::cout << "\n=== Conversation Management Demo ===" << std::endl;
-    
-    std::vector<std::string> messages = {
+std::string build_messages_json(const std::vector<std::pair<std::string, std::string>>& history) {
+    json messages = json::array();
+    for (const auto& turn : history) {
+        messages.push_back({
+            {"role", turn.first},
+            {"content", turn.second}
+        });
+    }
+    return messages.dump();
+}
+
+void run_conversation_demo(cactus_context_handle_t handle) {
+    std::cout << "\n=== FFI Multi-Turn Conversation Demo ===" << std::endl;
+    std::cout << "NOTE: This demo mirrors the formatting logic from main_llm.cpp" << std::endl;
+
+    std::vector<std::string> user_prompts = {
         "Hello! How are you today?",
-        "What can you help me with?", 
-        "Tell me a fun fact about space",
-        "Can you explain that in simpler terms?",
-        "Thank you for the explanation!"
+        "What can you help me with?",
+        "Tell me a fun fact about space"
     };
-    
-    for (size_t i = 0; i < messages.size(); ++i) {
-        std::cout << "\nTurn " << (i + 1) << ":" << std::endl;
-        std::cout << "User: " << messages[i] << std::endl;
-        
-        auto start_time = std::chrono::high_resolution_clock::now();
-        
-        cactus_conversation_result_c_t result = cactus_continue_conversation_c(handle, messages[i].c_str(), 150);
-        
-        auto end_time = std::chrono::high_resolution_clock::now();
-        auto js_overhead = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-        
-        if (!result.text) {
-            std::cerr << "Failed to get response for message: " << messages[i] << std::endl;
-            return false;
+
+    std::string prompt_so_far;
+    bool first_turn = true;
+
+    for (const auto &prompt : user_prompts) {
+        std::cout << "\nUser: " << prompt << std::endl;
+
+        // Build JSON with only the new user message
+        json msgs = json::array();
+        msgs.push_back({{"role", "user"}, {"content", prompt}});
+
+        char *formatted = cactus_get_formatted_chat_c(handle, msgs.dump().c_str(), "");
+        if (!formatted) {
+            std::cerr << "Failed to format chat." << std::endl;
+            continue;
         }
-        
-        std::cout << "Assistant: " << result.text << std::endl;
-        print_performance_metrics(result);
-        std::cout << "[TIMING] C++ FFI overhead: " << (js_overhead.count() - result.total_time) << "ms" << std::endl;
-        
-        // Check conversation status
-        bool is_active = cactus_is_conversation_active_c(handle);
-        std::cout << "[STATUS] Conversation active: " << (is_active ? "Yes" : "No") << std::endl;
-        
-        cactus_free_conversation_result_members_c(&result);
-        
+
+        std::string user_part = formatted;
+        cactus_free_string_c(formatted);
+
+        if (first_turn) {
+            prompt_so_far = user_part; // full prompt with assistant tag
+            first_turn = false;
+        } else {
+            // strip everything after assistant start so we only append user block
+            size_t assistant_pos = user_part.find("<|im_start|>assistant");
+            if (assistant_pos != std::string::npos) {
+                user_part = user_part.substr(0, assistant_pos) + "<|im_start|>assistant\n";
+            }
+            prompt_so_far += user_part;
+        }
+
+        // Setup completion params
+        first_token_received = false;
+        cactus_completion_params_c_t comp_params = {};
+        comp_params.prompt = user_part.c_str();
+        comp_params.n_predict = 150;
+        comp_params.temperature = 0.7;
+        comp_params.seed = -1;
+        const char *stop_sequences[] = {"<|im_end|>", "</s>"};
+        comp_params.stop_sequences = stop_sequences;
+        comp_params.stop_sequence_count = 2;
+        comp_params.token_callback = &token_callback;
+
+        cactus_completion_result_c_t result = {};
+        auto start = std::chrono::high_resolution_clock::now();
+        int status = cactus_completion_c(handle, &comp_params, &result);
+        auto end = std::chrono::high_resolution_clock::now();
+        auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+
+        if (status != 0) {
+            std::cerr << "Completion error: " << status << std::endl;
+            continue;
+        }
+
+        std::string assistant_reply = result.text ? result.text : "";
+        std::cout << "Assistant: " << assistant_reply << std::endl;
+
+        // Append assistant reply to prompt history so that future turns have context
+        prompt_so_far += "<|im_start|>assistant\n";
+        prompt_so_far += assistant_reply;
+        prompt_so_far += "<|im_end|>\n";
+
+        long long ttft_ms = first_token_received ? std::chrono::duration_cast<std::chrono::milliseconds>(first_token_time - start).count() : 0;
+        std::cout << "[PERFORMANCE] TTFT: " << ttft_ms << "ms, Total: " << total_ms << "ms, Tokens: " << result.tokens_predicted;
+        if (result.tokens_predicted > 0 && total_ms > 0) {
+            float tps = (float)result.tokens_predicted * 1000.0f / total_ms;
+            std::cout << ", Speed: " << std::fixed << std::setprecision(1) << tps << " tok/s";
+        }
+        std::cout << std::endl;
+
+        cactus_free_completion_result_members_c(&result);
         std::cout << std::string(60, '-') << std::endl;
     }
-    
-    return true;
 }
 
-bool simple_response_demo(cactus_context_handle_t handle) {
-    std::cout << "\n=== Simple Response Demo ===" << std::endl;
-    
-    std::vector<std::string> prompts = {
-        "Write a haiku about programming",
-        "What is the meaning of life?",
-        "Explain quantum computing in one sentence"
-    };
-    
-    for (const auto& prompt : prompts) {
-        std::cout << "\nPrompt: " << prompt << std::endl;
-        
-        char* response = cactus_generate_response_c(handle, prompt.c_str(), 100);
-        
-        if (!response) {
-            std::cerr << "Failed to generate response" << std::endl;
-            return false;
-        }
-        
-        std::cout << "Response: " << response << std::endl;
-        cactus_free_string_c(response);
-        
-        std::cout << std::string(50, '-') << std::endl;
-    }
-    
-    return true;
-}
 
 int main(int argc, char **argv) {
     const std::string model_url = "https://huggingface.co/QuantFactory/SmolLM-360M-Instruct-GGUF/resolve/main/SmolLM-360M-Instruct.Q6_K.gguf";
@@ -102,14 +128,13 @@ int main(int argc, char **argv) {
     std::cout << "\n=== Cactus Conversation FFI Example ===" << std::endl;
     
     try {
-        // Initialize context using FFI
         cactus_init_params_c_t init_params = {};
         init_params.model_path = model_filename.c_str();
         init_params.chat_template = nullptr;
         init_params.n_ctx = 2048;
         init_params.n_batch = 512;
         init_params.n_ubatch = 512;
-        init_params.n_gpu_layers = 99; // Use GPU acceleration
+        init_params.n_gpu_layers = 99;
         init_params.n_threads = 4;
         init_params.use_mmap = true;
         init_params.use_mlock = false;
@@ -130,48 +155,12 @@ int main(int argc, char **argv) {
 
         std::cout << "Model loaded successfully!" << std::endl;
         
-        // Get model information
         char* model_desc = cactus_get_model_desc_c(handle);
-        int32_t n_ctx = cactus_get_n_ctx_c(handle);
         std::cout << "Model: " << (model_desc ? model_desc : "Unknown") << std::endl;
-        std::cout << "Context size: " << n_ctx << std::endl;
         cactus_free_string_c(model_desc);
         
-        // Run different demos based on command line arguments
-        if (argc > 1 && std::string(argv[1]) == "simple") {
-            if (!simple_response_demo(handle)) {
-                cactus_free_context_c(handle);
-                return 1;
-            }
-        } else if (argc > 1 && std::string(argv[1]) == "conversation") {
-            if (!conversation_demo(handle)) {
-                cactus_free_context_c(handle);
-                return 1;
-            }
-        } else {
-            std::cout << "\nAvailable demos:" << std::endl;
-            std::cout << "  ./conversation_ffi simple       - Simple generateResponse demo" << std::endl;
-            std::cout << "  ./conversation_ffi conversation - Full conversation management demo" << std::endl;
-            std::cout << "\nNew Conversation API Features:" << std::endl;
-            std::cout << "  - Automatic KV cache optimization" << std::endl;
-            std::cout << "  - Consistent TTFT across conversation turns" << std::endl;
-            std::cout << "  - Built-in performance timing" << std::endl;
-            std::cout << "  - Simple conversation state management" << std::endl;
-            std::cout << "\nRunning conversation demo by default...\n" << std::endl;
-            
-            if (!conversation_demo(handle)) {
-                cactus_free_context_c(handle);
-                return 1;
-            }
-        }
-        
-        // Clear conversation and test state
-        std::cout << "\nClearing conversation..." << std::endl;
-        cactus_clear_conversation_c(handle);
-        bool is_active = cactus_is_conversation_active_c(handle);
-        std::cout << "Conversation active after clear: " << (is_active ? "Yes" : "No") << std::endl;
+        run_conversation_demo(handle);
 
-        // Clean up
         cactus_free_context_c(handle);
         
     } catch (const std::exception& e) {
