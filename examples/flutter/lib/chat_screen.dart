@@ -1,50 +1,37 @@
 import 'package:flutter/material.dart';
 import '../cactus_service.dart';
-import 'package:cactus/cactus.dart'; // For ChatMessage, BenchResult
+import 'package:cactus/cactus.dart';
 import 'widgets/message_bubble.dart';
-import 'widgets/benchmark_view.dart';
-import 'widgets/loading_indicator.dart';
 
 class ChatScreen extends StatefulWidget {
-  const ChatScreen({super.key});
+  final CactusService cactusService;
+  
+  const ChatScreen({super.key, required this.cactusService});
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
 class _ChatScreenState extends State<ChatScreen> {
-  final CactusService _cactusService = CactusService();
-  final TextEditingController _promptController = TextEditingController();
+  final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  bool _hasImage = false;
 
   @override
   void initState() {
     super.initState();
-    _cactusService.initialize();
-    // Listen to ValueNotifiers to rebuild UI when they change
-    _cactusService.chatMessages.addListener(_scrollToBottom);
+    widget.cactusService.messages.addListener(_scrollToBottom);
   }
 
   @override
   void dispose() {
-    _cactusService.chatMessages.removeListener(_scrollToBottom);
-    _cactusService.dispose();
-    _promptController.dispose();
+    widget.cactusService.messages.removeListener(_scrollToBottom);
+    _controller.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
-  void _sendMessage() {
-    final userInput = _promptController.text.trim();
-    if (userInput.isEmpty && _cactusService.imagePathForNextMessage.value == null) return;
-
-    _cactusService.sendMessage(userInput);
-    _promptController.clear();
-    _scrollToBottom(); 
-  }
-
   void _scrollToBottom() {
-    // Schedule scroll after the frame has been built
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
@@ -56,194 +43,159 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  void _pickAndStageImage() {
-    // Using a predefined asset for simplicity in this refactor
-    // A real app would use image_picker or similar
-    const String assetPath = 'assets/image.jpg'; 
-    const String tempFilename = 'temp_chat_image.jpg';
-    _cactusService.stageImageFromAsset(assetPath, tempFilename);
+  void _sendMessage() {
+    final text = _controller.text.trim();
+    if (text.isEmpty) return;
+    
+    widget.cactusService.sendMessage(text);
+    _controller.clear();
+    _hasImage = false;
+  }
+
+  void _addImage() async {
+    await widget.cactusService.addImage();
+    setState(() => _hasImage = true);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Cactus Flutter Chat'),
+        title: const Text('Cactus Demo'),
         actions: [
           ValueListenableBuilder<List<ChatMessage>>(
-            valueListenable: _cactusService.chatMessages,
-            builder: (context, chatMessages, child) {
+            valueListenable: widget.cactusService.messages,
+            builder: (context, messages, _) {
               return IconButton(
                 icon: const Icon(Icons.clear_all),
-                onPressed: chatMessages.isEmpty ? null : () => _cactusService.clearConversation(),
-                tooltip: 'Clear Conversation',
+                onPressed: messages.isEmpty ? null : () {
+                  widget.cactusService.clearConversation();
+                  setState(() => _hasImage = false);
+                },
               );
-            }
-          ),
-          ValueListenableBuilder<bool>(
-            valueListenable: _cactusService.isBenchmarking,
-            builder: (context, isBenchmarking, child) {
-              return IconButton(
-                icon: const Icon(Icons.memory),
-                onPressed: isBenchmarking || _cactusService.isLoading.value ? null : () => _cactusService.runBenchmark(),
-                tooltip: 'Run Benchmark',
-              );
-            }
+            },
           ),
         ],
       ),
       body: ValueListenableBuilder<String?>(
-        valueListenable: _cactusService.initError,
-        builder: (context, initError, _) {
-          if (initError != null) {
-            return Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: Center(
+        valueListenable: widget.cactusService.error,
+        builder: (context, error, _) {
+          if (error != null) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
                 child: Text(
-                  initError,
-                  style: const TextStyle(color: Colors.red, fontSize: 16),
+                  'Error: $error',
+                  style: const TextStyle(color: Colors.red),
                   textAlign: TextAlign.center,
                 ),
               ),
             );
           }
 
-          // Use multiple ValueListenableBuilders to react to specific state changes
           return ValueListenableBuilder<bool>(
-            valueListenable: _cactusService.isLoading,
+            valueListenable: widget.cactusService.isLoading,
             builder: (context, isLoading, _) {
-              return ValueListenableBuilder<bool>(
-                valueListenable: _cactusService.isBenchmarking,
-                builder: (context, isBenchmarking, _) {
-                  return ValueListenableBuilder<List<ChatMessage>>(
-                    valueListenable: _cactusService.chatMessages,
-                    builder: (context, chatMessages, _ ) {
-                       // Show initial loading only if no messages and not benchmarking and no error
-                        bool showInitialLoading = isLoading && chatMessages.isEmpty && !isBenchmarking && initError == null;
+              return ValueListenableBuilder<List<ChatMessage>>(
+                valueListenable: widget.cactusService.messages,
+                builder: (context, messages, _) {
+                  if (isLoading && messages.isEmpty) {
+                    return ValueListenableBuilder<String>(
+                      valueListenable: widget.cactusService.status,
+                      builder: (context, status, _) {
+                        return Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const CircularProgressIndicator(),
+                              const SizedBox(height: 16),
+                              Text(status),
+                            ],
+                          ),
+                        );
+                      },
+                    );
+                  }
 
-                        return Column(
-                        children: [
-                          if (showInitialLoading || (isBenchmarking && chatMessages.isEmpty) ) // Show loading or benchmark progress if chat is empty
-                            ValueListenableBuilder<double?>(
-                              valueListenable: _cactusService.downloadProgress,
-                              builder: (context, downloadProgress, _) {
-                                return ValueListenableBuilder<String>(
-                                  valueListenable: _cactusService.statusMessage,
-                                  builder: (context, statusMessage, _) {
-                                    return LoadingIndicator(
-                                      isLoading: isLoading, 
-                                      isBenchmarking: isBenchmarking,
-                                      downloadProgress: downloadProgress,
-                                      statusMessage: statusMessage,
-                                    );
-                                  }
-                                );
-                              }
-                            ),
-                          ValueListenableBuilder<BenchResult?>(
-                            valueListenable: _cactusService.benchResult,
-                            builder: (context, benchResult, _) {
-                              return BenchmarkView(benchResult: benchResult);
-                            }
-                          ),
-                          Expanded(
-                            child: ListView.builder(
-                              controller: _scrollController,
-                              padding: const EdgeInsets.all(8.0),
-                              itemCount: chatMessages.length,
-                              itemBuilder: (context, index) {
-                                final message = chatMessages[index];
-                                return MessageBubble(message: message);
-                              },
-                            ),
-                          ),
-                          if (!showInitialLoading) // Hide input if initially loading
-                            _buildChatInputArea(context, isLoading),
-                        ],
-                      );
-                    }
+                  return Column(
+                    children: [
+                      Expanded(
+                        child: ListView.builder(
+                          controller: _scrollController,
+                          padding: const EdgeInsets.all(8),
+                          itemCount: messages.length,
+                          itemBuilder: (context, index) {
+                            return MessageBubble(message: messages[index]);
+                          },
+                        ),
+                      ),
+                      _buildInputArea(isLoading),
+                    ],
                   );
-                }
+                },
               );
-            }
+            },
           );
-        }
+        },
       ),
     );
   }
 
-  Widget _buildChatInputArea(BuildContext context, bool currentIsLoading) {
+  Widget _buildInputArea(bool isLoading) {
     return Padding(
-      padding: const EdgeInsets.all(8.0),
+      padding: const EdgeInsets.all(8),
       child: Column(
         children: [
-          ValueListenableBuilder<String?>(
-            valueListenable: _cactusService.stagedAssetPath, // Listen to the staged asset path
-            builder: (context, stagedAssetPathValue, _) {
-              if (stagedAssetPathValue != null) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 8.0),
-                  child: Row(
-                    children: [
-                      Image.asset( // Display from asset path for consistency
-                        stagedAssetPathValue,
-                        width: 50,
-                        height: 50,
-                        fit: BoxFit.cover,
-                      ),
-                      const SizedBox(width: 8),
-                      const Text("Image staged"),
-                      IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () => _cactusService.clearStagedImage(),
-                      )
-                    ],
+          if (_hasImage)
+            Container(
+              padding: const EdgeInsets.all(8),
+              margin: const EdgeInsets.only(bottom: 8),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.image, color: Colors.blue),
+                  const SizedBox(width: 8),
+                  const Text('Image attached'),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.clear),
+                    onPressed: () => setState(() => _hasImage = false),
                   ),
-                );
-              }
-              return const SizedBox.shrink();
-            }
-          ),
+                ],
+              ),
+            ),
           Row(
             children: [
-              ValueListenableBuilder<String?>(
-                valueListenable: _cactusService.stagedAssetPath,
-                builder: (context, stagedAssetPathValue, _) {
-                  return IconButton(
-                    icon: Icon(Icons.image, color: stagedAssetPathValue != null ? Theme.of(context).primaryColor : null),
-                    onPressed: currentIsLoading ? null : () {
-                      if (stagedAssetPathValue == null) {
-                        _pickAndStageImage();
-                      } else {
-                        _cactusService.clearStagedImage();
-                      }
-                    },
-                  );
-                }
+              IconButton(
+                icon: Icon(
+                  Icons.image,
+                  color: _hasImage ? Colors.blue : null,
+                ),
+                onPressed: isLoading ? null : _addImage,
               ),
               Expanded(
                 child: TextField(
-                  controller: _promptController,
+                  controller: _controller,
                   decoration: const InputDecoration(
-                    hintText: 'Type your message...',
+                    hintText: 'Type a message...',
                     border: OutlineInputBorder(),
                   ),
-                  onSubmitted: (_) => currentIsLoading ? null : _sendMessage(),
-                  minLines: 1,
-                  maxLines: 3,
-                  enabled: !currentIsLoading,
+                  onSubmitted: (_) => isLoading ? null : _sendMessage(),
+                  enabled: !isLoading,
                 ),
               ),
-              ValueListenableBuilder<bool>(
-                valueListenable: _cactusService.isLoading, // Specifically listen to overall isLoading for send button
-                builder: (context, isLoadingForSendButton, _) {
-                  return IconButton(
-                    icon: isLoadingForSendButton && !(_cactusService.chatMessages.value.isEmpty && isLoadingForSendButton)
-                        ? const SizedBox(width:24, height:24, child:CircularProgressIndicator(strokeWidth: 2,))
-                        : const Icon(Icons.send),
-                    onPressed: isLoadingForSendButton ? null : _sendMessage,
-                  );
-                }
+              IconButton(
+                icon: isLoading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.send),
+                onPressed: isLoading ? null : _sendMessage,
               ),
             ],
           ),
