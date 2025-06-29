@@ -19,7 +19,7 @@ class CactusService {
   final ValueNotifier<String?> imagePathForNextMessage = ValueNotifier(null);
   final ValueNotifier<String?> stagedAssetPath = ValueNotifier(null); // For image picker display
   
-  bool _lastInteractionWasMultimodal = false;
+
 
   Future<void> initialize() async {
     isLoading.value = true;
@@ -30,7 +30,8 @@ class CactusService {
     // Cactus usage 
     try {
       final params = CactusInitParams(
-        modelUrl: 'https://huggingface.co/QuantFactory/SmolLM-360M-Instruct-GGUF/resolve/main/SmolLM-360M-Instruct.Q6_K.gguf',
+        modelUrl: 'https://huggingface.co/ggml-org/SmolVLM-500M-Instruct-GGUF/resolve/main/SmolVLM-500M-Instruct-Q8_0.gguf',
+        mmprojUrl: 'https://huggingface.co/ggml-org/SmolVLM-500M-Instruct-GGUF/resolve/main/mmproj-SmolVLM-500M-Instruct-Q8_0.gguf',
 
         onInitProgress: (progress, status, isError) {
           statusMessage.value = status; 
@@ -53,7 +54,7 @@ class CactusService {
         statusMessage.value = 'Initialization failed: ${initError.value}';
       }
 
-    } on CactusInitializationException catch (e) {
+    } on CactusException catch (e) {
       initError.value = "Initialization Error: ${e.message}";
       statusMessage.value = 'Failed to initialize context: ${e.message}';
       isLoading.value = false;
@@ -66,115 +67,85 @@ class CactusService {
     }
   }
 
-  Future<void> sendMessage(String userInput) async {
-    if (_cactusContext == null) {
-      chatMessages.value = [...chatMessages.value, ChatMessage(role: 'system', content: 'Error: CactusContext not initialized.')];
-      return;
-    }
+  Future<void> sendMessage(String message) async {
+    if (_cactusContext == null || isLoading.value) return;
 
-    final userMessage = ChatMessage(role: 'user', content: userInput);
-    final String? imagePathToSend = imagePathForNextMessage.value;
-    final bool isCurrentlyMultimodal = imagePathToSend != null;
-
-    imagePathForNextMessage.value = null;
-    stagedAssetPath.value = null;
-
-    if (_lastInteractionWasMultimodal != isCurrentlyMultimodal) {
-      debugPrint("Mode switch: ${_lastInteractionWasMultimodal ? 'multimodal' : 'text'} -> ${isCurrentlyMultimodal ? 'multimodal' : 'text'}, clearing conversation state");
-      chatMessages.value = [];
-    }
-    _lastInteractionWasMultimodal = isCurrentlyMultimodal;
-
-    List<ChatMessage> workingHistory = List.from(chatMessages.value);
-    workingHistory.add(userMessage);
-    workingHistory.add(ChatMessage(role: 'assistant', content: ''));
-    chatMessages.value = workingHistory;
     isLoading.value = true;
+    statusMessage.value = 'Generating response...';
 
-    String currentAssistantResponse = "";
+    final userMessage = ChatMessage(role: 'user', content: message);
+    chatMessages.value = [...chatMessages.value, userMessage, ChatMessage(role: 'assistant', content: '')];
+
     final stopwatch = Stopwatch()..start();
     int? ttft;
+    String streaming = '';
 
     try {
-      List<ChatMessage> messagesToSend;
-      if (chatMessages.value.length <= 2) { // First turn (user + assistant placeholder)
-          messagesToSend = List.from(chatMessages.value);
-          if (messagesToSend.isNotEmpty && messagesToSend.last.role == 'assistant') {
-            messagesToSend.removeLast(); // Don't send placeholder
-          }
-      } else {
-          // Subsequent turns, only send the latest user message.
-          messagesToSend = [userMessage];
-      }
+      CactusCompletionResult result;
       
-      final completionParams = CactusCompletionParams(
-        messages: messagesToSend,
-        maxPredictedTokens: 256,
-        stopSequences: ['<|im_end|>', '</s>'],
-        temperature: 0.7,
-        onNewToken: (String token) {
-          if (!isLoading.value) return false; 
-          if (ttft == null) {
-            ttft = stopwatch.elapsedMilliseconds;
-          }
-          if (token == '<|im_end|>' || token == '</s>') return false;
-
-          if (token.isNotEmpty) {
-            currentAssistantResponse += token;
-            final List<ChatMessage> streamingMessages = List.from(chatMessages.value);
-            if (streamingMessages.isNotEmpty && streamingMessages.last.role == 'assistant') {
-              streamingMessages[streamingMessages.length - 1] = ChatMessage(
-                role: 'assistant',
-                content: currentAssistantResponse,
-              );
-              chatMessages.value = streamingMessages;
+      // Check if we have a staged image
+      if (imagePathForNextMessage.value != null) {
+        // Use multimodal completion with image
+        final params = CactusCompletionParams(
+          messages: [ChatMessage(role: 'user', content: message)],
+          maxPredictedTokens: 250,
+          temperature: 0.7,
+          onNewToken: (tok) {
+            if (tok == '<|im_end|>' || tok == '</s>') return false;
+            ttft ??= stopwatch.elapsedMilliseconds;
+            if (tok.isNotEmpty) {
+              streaming += tok;
+              final msgs = List<ChatMessage>.from(chatMessages.value);
+              msgs[msgs.length - 1] = ChatMessage(role: 'assistant', content: streaming);
+              chatMessages.value = msgs;
             }
-          }
-          return true;
-        },
-      );
-
-      final CactusCompletionResult result;
-      if (isCurrentlyMultimodal) {
-        debugPrint("Using multimodal completion");
-        result = await _cactusContext!.multimodalCompletion(completionParams, [imagePathToSend!]);
-      } else {
-        debugPrint("Using text completion");
-        result = await _cactusContext!.completion(completionParams);
-      }
-      
-      stopwatch.stop();
-
-      // Performance logging
-      final totalTime = stopwatch.elapsedMilliseconds;
-      final tokensGenerated = result.tokensPredicted;
-      final tps = (tokensGenerated > 0 && totalTime > 0) ? (tokensGenerated * 1000.0 / totalTime) : 0.0;
-      debugPrint("[PERFORMANCE] TTFT: ${ttft ?? 'N/A'}ms, "
-                 "Total: ${totalTime}ms, "
-                 "Tokens: $tokensGenerated, "
-                 "Speed: ${tps.toStringAsFixed(1)} tok/s");
-
-      // Update UI with final result
-      String finalCleanText = result.text.trim();
-      if (finalCleanText.isEmpty && currentAssistantResponse.trim().isNotEmpty) {
-        finalCleanText = currentAssistantResponse.trim();
-      }
-
-      final List<ChatMessage> finalMessages = List.from(chatMessages.value);
-      if (finalMessages.isNotEmpty && finalMessages.last.role == 'assistant') {
-        finalMessages[finalMessages.length - 1] = ChatMessage(
-          role: 'assistant',
-          content: finalCleanText.isNotEmpty ? finalCleanText : "(No response generated)",
+            return true;
+          },
         );
-        chatMessages.value = finalMessages;
+        
+        result = await _cactusContext!.completion(
+          params,
+          mediaPaths: [imagePathForNextMessage.value!],
+        );
+        
+        // Clear the staged image after use
+        clearStagedImage();
+      } else {
+        // Use regular conversation continuation
+        final firstTurn = chatMessages.value.where((m) => m.role == 'user').length == 1;
+        
+        result = await _cactusContext!.continueConversation(
+          message,
+          firstTurn: firstTurn,
+          maxPredictedTokens: 250,
+          temperature: 0.7,
+          onNewToken: (tok) {
+            if (tok == '<|im_end|>' || tok == '</s>') return false;
+            ttft ??= stopwatch.elapsedMilliseconds;
+            if (tok.isNotEmpty) {
+              streaming += tok;
+              final msgs = List<ChatMessage>.from(chatMessages.value);
+              msgs[msgs.length - 1] = ChatMessage(role: 'assistant', content: streaming);
+              chatMessages.value = msgs;
+            }
+            return true;
+          },
+        );
       }
 
-    } on CactusCompletionException catch (e) {
-      _addErrorMessageToChat("Completion Error: ${e.message}");
-      debugPrint("Cactus Completion Exception: ${e.toString()}");
-    } catch (e) {
-      _addErrorMessageToChat("An unexpected error occurred during completion: ${e.toString()}");
-      debugPrint("Generic Exception during completion: ${e.toString()}");
+      stopwatch.stop();
+      final total = stopwatch.elapsedMilliseconds;
+      final tokens = result.tokensPredicted;
+      final tps = tokens > 0 && total > 0 ? tokens * 1000 / total : 0;
+      debugPrint('[PERF] TTFT:${ttft ?? 'N/A'}ms total:$total tokens:$tokens speed:${tps.toStringAsFixed(1)}');
+
+      final text = result.text.trim().isEmpty ? streaming.trim() : result.text.trim();
+      final msgs = List<ChatMessage>.from(chatMessages.value);
+      msgs[msgs.length - 1] = ChatMessage(role: 'assistant', content: text.isEmpty ? '(No response generated)' : text);
+      chatMessages.value = msgs;
+
+    } on CactusException catch (e) {
+      _addErrorMessageToChat(e.message);
     } finally {
       isLoading.value = false;
     }
@@ -211,7 +182,7 @@ class CactusService {
 
   void stageImageFromAsset(String assetPath, String tempFilename) async {
       try {
-        final ByteData assetData = await rootBundle.load(assetPath); // Requires services.dart
+        final ByteData assetData = await rootBundle.load(assetPath); 
         final Directory tempDir = await getTemporaryDirectory();
         final String tempFilePath = '${tempDir.path}/$tempFilename'; 
         final File tempFile = File(tempFilePath);
@@ -231,12 +202,19 @@ class CactusService {
 
   void clearConversation() {
     chatMessages.value = [];
-    _lastInteractionWasMultimodal = false;
-    debugPrint("Conversation history cleared, interaction mode reset");
+    if (_cactusContext != null) {
+      try {
+        _cactusContext!.rewind();
+        debugPrint("Native conversation state cleared via rewind()");
+      } catch (e) {
+        debugPrint("Error clearing native state: $e");
+      }
+    }
+    debugPrint("Conversation history cleared");
   }
 
   void dispose() {
-    _cactusContext?.free();
+    _cactusContext?.release();
     chatMessages.dispose();
     isLoading.dispose();
     isBenchmarking.dispose();
