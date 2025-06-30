@@ -2,9 +2,8 @@ import React from 'react';
 import { View, Text, Image, TextInput, TouchableOpacity, ScrollView } from 'react-native';
 import { Message } from './cactus';
 
-export const Header = ({ onClearConversation, conversationLength }: { 
-  onClearConversation?: () => void; 
-  conversationLength?: number; 
+export const Header = ({ onClearConversation }: { 
+  onClearConversation?: () => void;
 }) => (
   <View style={{ 
     backgroundColor: '#007AFF', 
@@ -16,7 +15,7 @@ export const Header = ({ onClearConversation, conversationLength }: {
     <Text style={{ color: 'white', fontSize: 18, fontWeight: 'bold' }}>
       Cactus VLM Chat
     </Text>
-    {conversationLength && conversationLength > 0 && onClearConversation && (
+    {onClearConversation && (
       <TouchableOpacity
         onPress={onClearConversation}
         style={{
@@ -27,7 +26,7 @@ export const Header = ({ onClearConversation, conversationLength }: {
         }}
       >
         <Text style={{ color: 'white', fontSize: 12, fontWeight: '600' }}>
-          Clear ({conversationLength?.toString() || '0'})
+          Clear
         </Text>
       </TouchableOpacity>
     )}

@@ -12,7 +12,6 @@ export default function HomeScreen() {
   const [isInitialized, setIsInitialized] = useState(false);
   const [initProgress, setInitProgress] = useState(0);
   const [currentFile, setCurrentFile] = useState('');
-  const [conversationLength, setConversationLength] = useState(0);
 
   useEffect(() => {
     const initializeCactus = async () => {
@@ -54,7 +53,6 @@ export default function HomeScreen() {
       };
 
       setMessages(prev => [...prev, assistantMessage]);
-      setConversationLength(cactus.getConversationLength());
     } catch (error) {
       console.error('Error generating response:', error);
       Alert.alert('Error', 'Failed to generate response');
@@ -88,7 +86,6 @@ export default function HomeScreen() {
           onPress: () => {
             cactus.clearConversation();
             setMessages([]);
-            setConversationLength(0);
             console.log('Conversation cleared');
           }
         }
@@ -109,7 +106,6 @@ export default function HomeScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
       <Header 
         onClearConversation={handleClearConversation}
-        conversationLength={conversationLength}
       />
       <KeyboardAvoidingView 
         style={{ flex: 1 }} 

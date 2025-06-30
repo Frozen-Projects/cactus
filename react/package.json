@@ -193,6 +193,7 @@
   "eslintIgnore": [
     "node_modules/",
     "lib/",
+    "example/",
     "*.d.ts",
     "llama.cpp/"
   ],
