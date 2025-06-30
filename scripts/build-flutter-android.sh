@@ -1,14 +1,14 @@
 #!/bin/bash -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "$SCRIPT_DIR/../cactus-flutter" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/../flutter" && pwd)"
 
 NDK_VERSION=26.1.10909125
 CMAKE_TOOLCHAIN_FILE=$ANDROID_HOME/ndk/$NDK_VERSION/build/cmake/android.toolchain.cmake
 ANDROID_PLATFORM=android-21
 CMAKE_BUILD_TYPE=Release
 
-# The CMakeLists.txt we are building is inside cactus-flutter/android/src/main
+# The CMakeLists.txt we are building is inside flutter/android/src/main
 FLUTTER_PLUGIN_ANDROID_MAIN_SRC_DIR="$ROOT_DIR/android/src/main"
 
 if [ ! -d "$ANDROID_HOME/ndk/$NDK_VERSION" ]; then

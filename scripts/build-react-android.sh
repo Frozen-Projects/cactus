@@ -1,7 +1,7 @@
 #!/bin/bash -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "$SCRIPT_DIR/../cactus-react" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/../react" && pwd)"
 
 NDK_VERSION=26.1.10909125
 CMAKE_TOOLCHAIN_FILE=$ANDROID_HOME/ndk/$NDK_VERSION/build/cmake/android.toolchain.cmake

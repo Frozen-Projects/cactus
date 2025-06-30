@@ -1,11 +1,11 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-cd "$ROOT_DIR/cactus-flutter"
+cd "$ROOT_DIR/flutter"
 
 echo "Copying iOS frameworks to Flutter project..."
 rm -rf ios/cactus.xcframework
-cp -R "$ROOT_DIR/cactus-ios"/cactus.xcframework ios/
+cp -R "$ROOT_DIR/ios"/cactus.xcframework ios/
 
 echo "Zipping JNILibs and XCFramework..."
 
@@ -18,7 +18,7 @@ XCFRAMEWORK_ZIP_TARGET="ios/cactus.xcframework.zip"
 # Zip JNILibs
 if [ -d "$JNI_LIBS_SOURCE_DIR" ]; then
   echo "Zipping JNILibs from $JNI_LIBS_SOURCE_DIR..."
-  (cd "$JNI_LIBS_SOURCE_DIR" && zip -r "$ROOT_DIR/cactus-flutter/$JNI_LIBS_ZIP_TARGET" . )
+  (cd "$JNI_LIBS_SOURCE_DIR" && zip -r "$ROOT_DIR/flutter/$JNI_LIBS_ZIP_TARGET" . )
   if [ $? -eq 0 ]; then
     echo "JNILibs successfully zipped to $JNI_LIBS_ZIP_TARGET"
   else
