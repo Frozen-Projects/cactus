@@ -42,6 +42,7 @@ export type {
   CactusMessagePart,
   CactusOAICompatibleMessage,
   JinjaFormattedChatResult,
+  NativeAudioDecodeResult,
 
   // Deprecated
   SchemaGrammarConverterPropOrder,
@@ -411,6 +412,11 @@ export class LlamaContext {
   async release(): Promise<void> {
     return Cactus.releaseContext(this.id)
   }
+
+  async rewind(): Promise<void> {
+    // @ts-ignore
+    return (Cactus as any).rewind(this.id)
+  }
 }
 
 export async function toggleNativeLog(enabled: boolean): Promise<void> {
@@ -591,3 +597,7 @@ export const tokenize = async (contextId: number, text: string, mediaPaths?: str
     return await Cactus.tokenize(contextId, text);
   }
 };
+
+export { CactusLM } from './lm';
+export { CactusVLM } from './vlm';
+export { CactusTTS } from './tts';
