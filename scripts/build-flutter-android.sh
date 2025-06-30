@@ -54,9 +54,6 @@ cmake --build "$BUILD_DIR_ARM64" --config "$CMAKE_BUILD_TYPE" -j "$n_cpu"
 
 echo "Copying $ABI_ARM64 libraries..."
 mkdir -p "$JNI_DEST_DIR_ARM64"
-# Assuming CMakeLists.txt generates libcactus.so and other variants directly in the build directory
-# Based on the react-native CMakeLists.txt, it can produce multiple .so files.
-# We'll copy all .so files produced.
 cp "$BUILD_DIR_ARM64"/lib*.so "$JNI_DEST_DIR_ARM64/"
 
 rm -rf "$BUILD_DIR_ARM64"

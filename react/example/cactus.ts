@@ -9,13 +9,6 @@ export interface Message {
   images?: string[];
 }
 
-interface ConversationResult {
-  text: string;
-  time_to_first_token: number;
-  total_time: number;
-  tokens_generated: number;
-}
-
 // VLM Model URLs
 const modelUrl = 'https://huggingface.co/ggml-org/SmolVLM-256M-Instruct-GGUF/resolve/main/SmolVLM-256M-Instruct-Q8_0.gguf';
 const mmprojUrl = 'https://huggingface.co/ggml-org/SmolVLM-256M-Instruct-GGUF/resolve/main/mmproj-SmolVLM-256M-Instruct-Q8_0.gguf';
@@ -28,6 +21,7 @@ const stopWords = ['<|end_of_text|>', '<|endoftext|>', '</s>', '<end_of_utteranc
 class CactusManager {
   private context: LlamaContext | null = null;
   private isInitialized = false;
+  private conversationHistory: CactusOAICompatibleMessage[] = [];
   private demoImagePath: string | null = null;
   private lastInteractionWasMultimodal = false;
 
@@ -136,41 +130,43 @@ class CactusManager {
       throw new Error('Cactus context not initialized');
     }
 
-    const startTime = Date.now();
-    console.log('[TIMING] generateResponse called at', new Date().toISOString());
+    console.log('🚀 generateResponse called');
 
     const isCurrentlyMultimodal = !!(userMessage.images && userMessage.images.length > 0);
-    console.log(`[CONTEXT] Mode: ${isCurrentlyMultimodal ? 'multimodal' : 'text'}, conversation active: ${await this.context.isConversationActive()}`);
     
+    // Clear conversation history when switching between modes to prevent context bleeding
     if (this.lastInteractionWasMultimodal !== isCurrentlyMultimodal) {
-      console.log(`[MODE_SWITCH] Switching from ${this.lastInteractionWasMultimodal ? 'multimodal' : 'text'} to ${isCurrentlyMultimodal ? 'multimodal' : 'text'} mode - clearing conversation`);
-      await this.context.clearConversation();
+      console.log(`🔄 Switching from ${this.lastInteractionWasMultimodal ? 'multimodal' : 'text'} to ${isCurrentlyMultimodal ? 'multimodal' : 'text'} mode - clearing history`);
+      this.conversationHistory = [];
     }
 
     this.lastInteractionWasMultimodal = isCurrentlyMultimodal;
 
     if (userMessage.images && userMessage.images.length > 0) {
+      // For multimodal messages, use the demo image path
       const localImagePaths = userMessage.images.map(() => this.demoImagePath!).filter(Boolean);
       
-      console.log('Using multimodal completion with local images:', localImagePaths);
+      console.log('🖼️ Using multimodal completion with local images:', localImagePaths);
       
-      const conversationHistory: CactusOAICompatibleMessage[] = [{
+      // Add user message to conversation history first
+      this.conversationHistory.push({
         role: 'user',
         content: userMessage.content
-      }];
+      });
 
+      // Use proper chat template formatting for multimodal - get formatted prompt first
       const formattedPrompt = await this.context.getFormattedChat(
-        conversationHistory,
-        undefined,
+        this.conversationHistory,
+        undefined, // Let the model use its default chat template
         { jinja: true }
       );
 
+      // Extract prompt string from formatted result
       const promptString = typeof formattedPrompt === 'string' ? formattedPrompt : formattedPrompt.prompt;
 
-      console.log('Formatted multimodal prompt:', promptString.substring(0, 100) + '...');
+      console.log('📝 Formatted multimodal prompt:', promptString.substring(0, 100) + '...');
 
-      console.log('[TIMING] Starting multimodal completion...');
-      
+      // Use multimodal completion with properly formatted prompt
       const multimodalResult = await multimodalCompletion(
         this.context.id,
         promptString,
@@ -179,64 +175,86 @@ class CactusManager {
           prompt: promptString,
           n_predict: 256,
           stop: stopWords,
-          temperature: 0.3,
+          temperature: 0.3, // Slightly higher to reduce repetition but still focused
           top_p: 0.9,
-          penalty_repeat: 1.1,
+          penalty_repeat: 1.1, // Prevent repetitive outputs
           emit_partial_completion: false,
         }
       );
 
-      const totalTime = Date.now() - startTime;
-      console.log(`[TIMING] Total multimodal response time: ${totalTime}ms`);
+      const responseText = multimodalResult.text || 'No response generated';
       
-      return multimodalResult.text;
-    } else {
-      console.log('Using optimized conversation API for text completion');
-      
-      try {
-        console.log('[TIMING] Starting continueConversation...');
-        
-        const result: ConversationResult = await this.context.continueConversation(userMessage.content, 256);
-        
-        console.log(`[PERFORMANCE] TTFT: ${result.time_to_first_token}ms`);
-        console.log(`[PERFORMANCE] Total generation: ${result.total_time}ms`);
-        console.log(`[PERFORMANCE] Tokens generated: ${result.tokens_generated}`);
-        console.log(`[PERFORMANCE] Speed: ${(result.tokens_generated / (result.total_time / 1000)).toFixed(1)} tok/s`);
+      // Add assistant response to history
+      this.conversationHistory.push({
+        role: 'assistant', 
+        content: responseText
+      });
 
-        const totalTime = Date.now() - startTime;
-        console.log(`[TIMING] Total text response time: ${totalTime}ms`);
+      console.log('🖼️ Multimodal completion finished');
+      return responseText;
+    } else {
+      // For text-only messages, use pure text completion to avoid visual interference
+      
+      // Add user message to conversation history
+      this.conversationHistory.push({
+        role: 'user',
+        content: userMessage.content
+      });
+
+      console.log('🔤 Using pure text completion (no image context)');
+      console.log('📊 Conversation history length:', this.conversationHistory.length);
+      console.log('🏁 About to call context.completion...');
+
+      try {
+        // Use text-only completion with explicit empty image array to prevent visual context
+        const result = await this.context.completion({
+          messages: this.conversationHistory,
+          n_predict: 256,
+          stop: stopWords,
+          temperature: 0.7, // Higher temperature for creative text responses
+          top_p: 0.9,
+          penalty_repeat: 1.05, // Light repetition penalty for text
+        });
+
+        console.log('✅ Text completion successful, result received');
+        console.log('📝 Response length:', result.text?.length || 0);
+
+        const responseText = result.text || 'No response generated';
         
-        return result.text;
+        // Add assistant response to history
+        this.conversationHistory.push({
+          role: 'assistant',
+          content: responseText
+        });
+
+        console.log('💾 Text response added to history');
+        return responseText;
       } catch (error) {
-        console.error('Text completion failed:', error);
+        console.error('❌ Text completion failed:', error);
         throw error;
       }
     }
   }
 
-  async clearConversation(): Promise<void> {
-    if (!this.context) return;
-    
-    const wasActive = await this.context.isConversationActive();
-    await this.context.clearConversation();
+  clearConversation(): void {
+    this.conversationHistory = [];
     this.lastInteractionWasMultimodal = false;
-    console.log(`[CLEAR] Conversation cleared (was ${wasActive ? 'active' : 'inactive'}) and interaction mode reset`);
+    console.log('Conversation history cleared and interaction mode reset');
   }
 
   getDemoImageUri(): string {
     if (this.demoImagePath) {
       return this.demoImagePath.startsWith('file://') ? this.demoImagePath : `file://${this.demoImagePath}`;
     }
-    return demoImageUrl; 
+    return demoImageUrl; // Fallback to external URL
   }
 
   getIsInitialized(): boolean {
     return this.isInitialized;
   }
 
-  async isConversationActive(): Promise<boolean> {
-    if (!this.context) return false;
-    return await this.context.isConversationActive();
+  getConversationLength(): number {
+    return this.conversationHistory.length;
   }
 }
 
