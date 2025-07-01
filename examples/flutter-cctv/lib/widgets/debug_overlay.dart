@@ -12,7 +12,7 @@ class DebugOverlay extends StatelessWidget {
     if (imageFile == null) return const SizedBox.shrink();
     
     return Container(
-      color: Colors.black.withOpacity(0.8),
+      color: Colors.black.withValues(alpha: .8),
       padding: const EdgeInsets.all(8),
       child: Column(
         mainAxisSize: MainAxisSize.min,

@@ -43,7 +43,8 @@ void inferenceIsolateEntry(Map<String, dynamic> message) async {
 
         final CactusCompletionParams completionParams = CactusCompletionParams(
           messages: [
-            ChatMessage(role: 'user', content: '<__image__>What do you see?')
+            ChatMessage(role: 'system', content: 'Your job is to provide very short, concise, succinct descriptions of what you see in the image. Provide the description directly; do not start with "Here is what I see" or anything like that. Just give the description.'),
+            ChatMessage(role: 'user', content: '<__image__>What do you see?'),
           ],
           imagePath: imagePath,
           maxPredictedTokens: 50,

@@ -5,9 +5,9 @@
     <uses-feature android:name="android.hardware.camera.autofocus" />
     
     <application
-        android:label="cactus_flutter_example"
+        android:label="Cactus CCTV"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/launcher_icon">
         <activity
             android:name=".MainActivity"
             android:exported="true"
