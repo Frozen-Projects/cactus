@@ -1,8 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
-
-import './ffi_bindings.dart' as bindings;
 import './types.dart';
 import './tools.dart';
 import './cactus_context.dart';
