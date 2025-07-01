@@ -1,4 +1,3 @@
-import type { CactusOAICompatibleMessage } from "./chat";
 import type { NativeCompletionResult } from "./NativeCactus";
 
 interface Parameter {
@@ -55,73 +54,33 @@ export class Tools {
   }
 }
 
-export function injectToolsIntoMessages(messages: CactusOAICompatibleMessage[], tools: Tools): CactusOAICompatibleMessage[] {
-  const newMessages = [...messages];
-  const toolsSchemas = tools.getSchemas();
-  const promptToolInjection = `You have access to the following functions. Use them if required - 
-${JSON.stringify(toolsSchemas, null, 2)}
-Only use an available tool if needed. If a tool is chosen, respond ONLY with a JSON object matching the following schema:
-\`\`\`json
-{
-"tool_name": "<name of the tool>",
-"tool_input": {
-"<parameter_name>": "<parameter_value>",
-...
-}
-}
-\`\`\`
-Remember, if you are calling a tool, you must respond with the JSON object and the JSON object ONLY!
-If no tool is needed, respond normally.
-  `;
-  
-  const systemMessage = newMessages.find(m => m.role === 'system');
-  if (!systemMessage) {
-      newMessages.unshift({
-          role: 'system',
-          content: promptToolInjection
-      });
-  } else {
-      systemMessage.content = `${systemMessage.content}\n\n${promptToolInjection}`;
+export async function parseAndExecuteTool(result: NativeCompletionResult, tools: Tools): Promise<{toolCalled: boolean, toolName?: string, toolInput?: any, toolOutput?: any}> {
+  if (!result.tool_calls || result.tool_calls.length === 0) {
+      // console.log('No tool calls found');
+      return {toolCalled: false};
   }
   
-  return newMessages;
-}
-
-export async function parseAndExecuteTool(result: NativeCompletionResult, tools: Tools): Promise<{toolCalled: boolean, toolName?: string, toolInput?: any, toolOutput?: any}> {
-  const match = result.content.match(/```json\s*([\s\S]*?)\s*```/);
-  
-  if (!match || !match[1]) return {toolCalled: false};
-  
   try {
-      const jsonContent = JSON.parse(match[1]);
-      const { tool_name, tool_input } = jsonContent;
-      // console.log('Calling tool:', tool_name, tool_input);
-      const toolOutput = await tools.execute(tool_name, tool_input) || true;
+      const toolCall = result.tool_calls[0];
+      if (!toolCall) {
+        // console.log('No tool call found');
+        return {toolCalled: false};
+      }
+      const toolName = toolCall.function.name;
+      const toolInput = JSON.parse(toolCall.function.arguments);
+      
+      // console.log('Calling tool:', toolName, toolInput);
+      const toolOutput = await tools.execute(toolName, toolInput);
       // console.log('Tool called result:', toolOutput);
       
       return {
           toolCalled: true,
-          toolName: tool_name,
-          toolInput: tool_input,
+          toolName,
+          toolInput,
           toolOutput
       };
   } catch (error) {
-      // console.error('Error parsing JSON:', match, error);
+      // console.error('Error parsing tool call:', error);
       return {toolCalled: false};
   }
-}
-
-export function updateMessagesWithToolCall(messages: CactusOAICompatibleMessage[], toolName: string, toolInput: any, toolOutput: any): CactusOAICompatibleMessage[] {
-  const newMessages = [...messages];
-
-  newMessages.push({
-      role: 'function-call',
-      content: JSON.stringify({name: toolName, arguments: toolInput}, null, 2)
-  })
-  newMessages.push({
-      role: 'function-response',
-      content: JSON.stringify(toolOutput, null, 2)
-  })
-  
-  return newMessages;
 }

@@ -26,7 +26,7 @@ import type {
 import { SchemaGrammarConverter, convertJsonSchemaToGrammar } from './grammar'
 import type { CactusMessagePart, CactusOAICompatibleMessage } from './chat'
 import { formatChat } from './chat'
-import { Tools, injectToolsIntoMessages, parseAndExecuteTool, updateMessagesWithToolCall } from './tools'
+import { Tools, parseAndExecuteTool } from './tools'
 export type {
   NativeContextParams,
   NativeLlamaContext,
@@ -231,49 +231,72 @@ export class LlamaContext {
       tool_choice: params?.tool_choice,
     })
   }
-
+  
   async completionWithTools(
-      params: CompletionParams & {tools: Tools},
-      callback?: (data: TokenData) => void,
-      recursionCount: number = 0,
-      recursionLimit: number = 3
-  ): Promise<NativeCompletionResult> {
-      if (!params.messages) { // tool calling only works with messages
-          return this.completion(params, callback);
-      }
-      if (!params.tools) { // no tools => default completion
-          return this.completion(params, callback);
-      }
-      if (recursionCount >= recursionLimit) {
-          return this.completion(params, callback);
-      }
+    params: CompletionParams & {tools: Tools},
+    callback?: (data: TokenData) => void,
+    recursionCount: number = 0,
+    recursionLimit: number = 3
+): Promise<NativeCompletionResult> {
+    if (!params.messages) { // tool calling only works with messages
+        return this.completion(params, callback);
+    }
+    if (!params.tools) { // no tools => default completion
+        return this.completion(params, callback);
+    }
+    if (recursionCount >= recursionLimit) {
+        // console.log(`Recursion limit reached (${recursionCount}/${recursionLimit}), returning default completion`)
+        return this.completion({
+            ...params,
+            jinja: true, 
+            tools: params.tools.getSchemas()
+        }, callback);
+    }
 
-      let messages = [...params?.messages || []]; // avoid mutating the original
+    const messages = [...params.messages]; // avoid mutating the original messages
 
-      if (recursionCount === 0) {
-          messages = injectToolsIntoMessages(messages, params.tools);
-      }
+    // console.log('Calling completion...')
+    const result = await this.completion({
+        ...params, 
+        messages: messages,
+        jinja: true, 
+        tools: params.tools.getSchemas()
+    }, callback);
+    // console.log('Completion result:', result);
+    
+    const {toolCalled, toolName, toolInput, toolOutput} = 
+        await parseAndExecuteTool(result, params.tools);
 
-      const result = await this.completion({...params, messages}, callback);
-      
-      const {toolCalled, toolName, toolInput, toolOutput} = 
-          await parseAndExecuteTool(result, params.tools);
+    if (toolCalled && toolName && toolInput) {
+        const assistantMessage = {
+            role: 'assistant',
+            content: result.content,
+            tool_calls: result.tool_calls
+        } as CactusOAICompatibleMessage;
 
-      if (toolCalled && toolName && toolInput) {
-          const newMessages = updateMessagesWithToolCall(
-              messages, toolName, toolInput, toolOutput
-          );
-          
-          return await this.completionWithTools(
-              {...params, messages: newMessages}, 
-              callback, 
-              recursionCount + 1, 
-              recursionLimit
-          );
-      }
+        messages.push(assistantMessage);
+        
+        const toolCallId = result.tool_calls?.[0]?.id;
+        const toolMessage = {
+            role: 'tool',
+            content: JSON.stringify(toolOutput),
+            tool_call_id: toolCallId
+        } as CactusOAICompatibleMessage;
+        
+        messages.push(toolMessage);
+        
+        // console.log('Messages being sent to next completion:', JSON.stringify(messages, null, 2));
+        
+        return await this.completionWithTools(
+            {...params, messages: messages}, 
+            callback, 
+            recursionCount + 1, 
+            recursionLimit
+        );
+    }
 
-      return result;
-}
+    return result;
+  }
 
   async completion(
     params: CompletionParams,
