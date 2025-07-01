@@ -1,14 +1,14 @@
 #!/bin/bash -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "$SCRIPT_DIR/../cactus-flutter" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/../flutter" && pwd)"
 
-NDK_VERSION=26.1.10909125
+NDK_VERSION=27.0.12077973
 CMAKE_TOOLCHAIN_FILE=$ANDROID_HOME/ndk/$NDK_VERSION/build/cmake/android.toolchain.cmake
 ANDROID_PLATFORM=android-21
 CMAKE_BUILD_TYPE=Release
 
-# The CMakeLists.txt we are building is inside cactus-flutter/android/src/main
+# The CMakeLists.txt we are building is inside flutter/android/src/main
 FLUTTER_PLUGIN_ANDROID_MAIN_SRC_DIR="$ROOT_DIR/android/src/main"
 
 if [ ! -d "$ANDROID_HOME/ndk/$NDK_VERSION" ]; then
@@ -54,9 +54,6 @@ cmake --build "$BUILD_DIR_ARM64" --config "$CMAKE_BUILD_TYPE" -j "$n_cpu"
 
 echo "Copying $ABI_ARM64 libraries..."
 mkdir -p "$JNI_DEST_DIR_ARM64"
-# Assuming CMakeLists.txt generates libcactus.so and other variants directly in the build directory
-# Based on the react-native CMakeLists.txt, it can produce multiple .so files.
-# We'll copy all .so files produced.
 cp "$BUILD_DIR_ARM64"/lib*.so "$JNI_DEST_DIR_ARM64/"
 
 rm -rf "$BUILD_DIR_ARM64"

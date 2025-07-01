@@ -8,12 +8,12 @@ export LEFTHOOK=0
 [ -d node_modules ] && rm -rf node_modules
 [ -d lib ] && rm -rf lib 
 
-cd "$ROOT_DIR/cactus-react" 
+cd "$ROOT_DIR/react" 
 
 echo "Copying iOS frameworks to React Native project..."
 rm -rf ios/cactus.xcframework
-cp -R "$ROOT_DIR/cactus-ios"/cactus.xcframework ios/
-cp -R "$ROOT_DIR/cactus-ios"/CMakeLists.txt ios/
+cp -R "$ROOT_DIR/ios"/cactus.xcframework ios/
+cp -R "$ROOT_DIR/ios"/CMakeLists.txt ios/
 
 echo "Building React Native package..." 
 yarn 
