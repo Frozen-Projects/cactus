@@ -29,23 +29,19 @@ flutter pub get
 import 'package:cactus/cactus.dart';
 
 Future<String> basicCompletion() async {
-  // Initialize context
-  final context = await CactusContext.init(CactusInitParams(
-    modelPath: '/path/to/model.gguf',
+  // Initialize language model
+  final lm = await CactusLM.init(
+    modelUrl: 'https://huggingface.co/Cactus-Compute/Qwen3-600m-Instruct-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf',
     contextSize: 2048,
     threads: 4,
-  ));
+  );
 
   // Generate response
-  final result = await context.completion(CactusCompletionParams(
-    messages: [
-      ChatMessage(role: 'user', content: 'Hello, how are you?')
-    ],
-    maxPredictedTokens: 100,
-    temperature: 0.7,
-  ));
+  final result = await lm.completion([
+    ChatMessage(role: 'user', content: 'Hello, how are you?')
+  ], maxTokens: 100, temperature: 0.7);
 
-  context.free();
+  lm.dispose();
   return result.text;
 }
 ```
@@ -55,8 +51,6 @@ Future<String> basicCompletion() async {
 ```dart
 import 'package:flutter/material.dart';
 import 'package:cactus/cactus.dart';
-import 'dart:io';
-import 'package:path_provider/path_provider.dart';
 
 void main() => runApp(ChatApp());
 
@@ -77,7 +71,7 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
-  CactusContext? _context;
+  CactusLM? _lm;
   List<ChatMessage> _messages = [];
   TextEditingController _controller = TextEditingController();
   bool _isLoading = true;
@@ -91,24 +85,24 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
-    _context?.free();
+    _lm?.dispose();
     super.dispose();
   }
 
   Future<void> _initializeModel() async {
     try {
-      // Initialize context using a model URL.
+      // Initialize language model using a model URL.
       // The model will be downloaded and cached automatically.
-      _context = await CactusContext.init(CactusInitParams(
-        modelUrl: 'https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/Phi-3-mini-4k-instruct-q4.gguf',
+      _lm = await CactusLM.init(
+        modelUrl: 'https://huggingface.co/Cactus-Compute/Qwen3-600m-Instruct-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf',
         contextSize: 4096,
         threads: 4,
         gpuLayers: 99,
-        onInitProgress: (progress, status, isError) {
+        onProgress: (progress, status, isError) {
           print('Init: $status ${progress != null ? '${(progress * 100).toInt()}%' : ''}');
           // You can update UI here, e.g., using setState or a ValueNotifier
         },
-      ));
+      );
 
       setState(() => _isLoading = false);
     } catch (e) {
@@ -118,7 +112,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _sendMessage() async {
-    if (_context == null || _controller.text.trim().isEmpty) return;
+    if (_lm == null || _controller.text.trim().isEmpty) return;
 
     final userMessage = ChatMessage(role: 'user', content: _controller.text.trim());
     setState(() {
@@ -131,19 +125,19 @@ class _ChatScreenState extends State<ChatScreen> {
     String currentResponse = '';
 
     try {
-      final result = await _context!.completion(CactusCompletionParams(
-        messages: List.from(_messages)..removeLast(), // Remove empty assistant message
-        maxPredictedTokens: 256,
+      final result = await _lm!.completion(
+        List.from(_messages)..removeLast(), // Remove empty assistant message
+        maxTokens: 256,
         temperature: 0.7,
         stopSequences: ['<|end|>', '</s>'],
-        onNewToken: (token) {
+        onToken: (token) {
           currentResponse += token;
           setState(() {
             _messages.last = ChatMessage(role: 'assistant', content: currentResponse);
           });
           return true; // Continue generation
         },
-      ));
+      );
 
       // Update with final response
       setState(() {
@@ -245,25 +239,123 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 }
 
+## Core APIs
+
+### CactusLM (Language Model)
+
+For text-only language models:
+
+```dart
+import 'package:cactus/cactus.dart';
+
+// Initialize
+final lm = await CactusLM.init(
+  modelUrl: 'https://huggingface.co/Cactus-Compute/Qwen3-600m-Instruct-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf',
+  contextSize: 4096,
+  threads: 4,
+  gpuLayers: 99, // GPU layers (0 = CPU only)
+  generateEmbeddings: true, // Enable embeddings
+);
+
+// Text completion
+final messages = [
+  ChatMessage(role: 'system', content: 'You are a helpful assistant.'),
+  ChatMessage(role: 'user', content: 'What is the capital of France?'),
+];
+
+final result = await lm.completion(
+  messages,
+  maxTokens: 200,
+  temperature: 0.7,
+  topP: 0.9,
+  stopSequences: ['</s>', '\n\n'],
+);
+
+// Embeddings
+final embeddingVector = lm.embedding('Your text here');
+print('Embedding dimensions: ${embeddingVector.length}');
+
+// Cleanup
+lm.dispose();
+```
+
+### CactusVLM (Vision Language Model)
+
+For multimodal models that can process both text and images:
+
+```dart
+import 'package:cactus/cactus.dart';
+
+// Initialize with automatic model download
+final vlm = await CactusVLM.init(
+  modelUrl: 'https://huggingface.co/Cactus-Compute/Gemma3-4B-Instruct-GGUF/resolve/main/gemma-3-4b-it-Q4_K_M.gguf',
+  visionUrl: 'https://huggingface.co/Cactus-Compute/Gemma3-4B-Instruct-GGUF/resolve/main/mmproj-model-f16.gguf',
+  contextSize: 2048,
+  threads: 4,
+  gpuLayers: 99,
+);
+
+// Image + text completion
+final messages = [ChatMessage(role: 'user', content: 'What do you see in this image?')];
+
+final result = await vlm.completion(
+  messages,
+  imagePaths: ['/path/to/image.jpg'],
+  maxTokens: 200,
+  temperature: 0.3,
+);
+
+// Text-only completion (same interface)
+final textResult = await vlm.completion([
+  ChatMessage(role: 'user', content: 'Tell me a joke')
+], maxTokens: 100);
+
+// Cleanup
+vlm.dispose();
+```
+
+### CactusTTS (Text-to-Speech)
+
+For text-to-speech generation:
+
+```dart
+import 'package:cactus/cactus.dart';
+
+// Initialize with vocoder
+final tts = await CactusTTS.init(
+  modelUrl: 'https://example.com/tts-model.gguf',
+  contextSize: 1024,
+  threads: 4,
+);
+
+// Generate speech
+final text = 'Hello, this is a test of text-to-speech functionality.';
+
+final result = await tts.generate(
+  text,
+  maxTokens: 256,
+  temperature: 0.7,
+);
+
+// Cleanup
+tts.dispose();
+```
+
 ## Text Completion
 
 ### Basic Generation
 
 ```dart
-Future<String> generateText(CactusContext context, String prompt) async {
-  final result = await context.completion(CactusCompletionParams(
-    messages: [ChatMessage(role: 'user', content: prompt)],
-    maxPredictedTokens: 200,
-    temperature: 0.8,
-    topK: 40,
-    topP: 0.9,
-  ));
+Future<String> generateText(CactusLM lm, String prompt) async {
+  final result = await lm.completion([
+    ChatMessage(role: 'user', content: prompt)
+  ], maxTokens: 200, temperature: 0.8);
   
   return result.text;
 }
 
 // Usage
-final response = await generateText(context, 'Write a short poem about Flutter development');
+final response = await generateText(lm, 'Write a short poem about Flutter development');
 print(response);
 ```
 
@@ -271,9 +363,9 @@ print(response);
 
 ```dart
 class StreamingChatWidget extends StatefulWidget {
-  final CactusContext context;
+  final CactusLM lm;
   
-  StreamingChatWidget({required this.context});
+  StreamingChatWidget({required this.lm});
   
   @override
   _StreamingChatWidgetState createState() => _StreamingChatWidgetState();
@@ -290,17 +382,18 @@ class _StreamingChatWidgetState extends State<StreamingChatWidget> {
     });
 
     try {
-      await widget.context.completion(CactusCompletionParams(
-        messages: [ChatMessage(role: 'user', content: prompt)],
-        maxPredictedTokens: 500,
+      await widget.lm.completion([
+        ChatMessage(role: 'user', content: prompt)
+      ], 
+        maxTokens: 500,
         temperature: 0.7,
-        onNewToken: (token) {
+        onToken: (token) {
           setState(() {
             _currentResponse += token;
           });
           return true; // Continue generation
         },
-      ));
+      );
     } finally {
       setState(() => _isGenerating = false);
     }
@@ -333,50 +426,42 @@ class _StreamingChatWidgetState extends State<StreamingChatWidget> {
 
 ```dart
 class AdvancedCompletionService {
-  final CactusContext context;
+  final CactusLM lm;
   
-  AdvancedCompletionService(this.context);
+  AdvancedCompletionService(this.lm);
 
-  Future<CactusCompletionResult> creativeCompletion(List<ChatMessage> messages) async {
-    return await context.completion(CactusCompletionParams(
-      messages: messages,
-      maxPredictedTokens: 512,
+  Future<CactusResult> creativeCompletion(List<ChatMessage> messages) async {
+    return await lm.completion(
+      messages,
+      maxTokens: 512,
       
       // Creative settings
       temperature: 0.9,          // High randomness
       topK: 60,                  // Broader sampling
       topP: 0.95,               // More diverse outputs
       
-      // Repetition control
-      penaltyRepeat: 1.15,      // Strong repetition penalty
-      penaltyFreq: 0.1,         // Frequency penalty
-      penaltyPresent: 0.1,      // Presence penalty
-      
       stopSequences: ['</story>', '<|end|>'],
-    ));
+    );
   }
 
-  Future<CactusCompletionResult> factualCompletion(List<ChatMessage> messages) async {
-    return await context.completion(CactusCompletionParams(
-      messages: messages,
-      maxPredictedTokens: 256,
+  Future<CactusResult> factualCompletion(List<ChatMessage> messages) async {
+    return await lm.completion(
+      messages,
+      maxTokens: 256,
       
       // Focused settings
       temperature: 0.3,          // Low randomness
       topK: 20,                  // Focused sampling
       topP: 0.8,                // Conservative
       
-      // Minimal repetition penalty
-      penaltyRepeat: 1.05,
-      
       stopSequences: ['\n\n', '<|end|>'],
-    ));
+    );
   }
 
-  Future<CactusCompletionResult> codeCompletion(List<ChatMessage> messages) async {
-    return await context.completion(CactusCompletionParams(
-      messages: messages,
-      maxPredictedTokens: 1024,
+  Future<CactusResult> codeCompletion(List<ChatMessage> messages) async {
+    return await lm.completion(
+      messages,
+      maxTokens: 1024,
       
       // Code-optimized settings
       temperature: 0.1,          // Very focused
@@ -384,7 +469,7 @@ class AdvancedCompletionService {
       topP: 0.7,                // Deterministic
       
       stopSequences: ['```', '\n\n\n'],
-    ));
+    );
   }
 }
 ```
@@ -393,10 +478,10 @@ class AdvancedCompletionService {
 
 ```dart
 class ConversationManager {
-  final CactusContext context;
+  final CactusLM lm;
   final List<ChatMessage> _history = [];
   
-  ConversationManager(this.context);
+  ConversationManager(this.lm);
 
   void addSystemMessage(String content) {
     _history.insert(0, ChatMessage(role: 'system', content: content));
@@ -407,12 +492,12 @@ class ConversationManager {
     _history.add(ChatMessage(role: 'user', content: userMessage));
     
     // Generate response
-    final result = await context.completion(CactusCompletionParams(
-      messages: _history,
-      maxPredictedTokens: 256,
+    final result = await lm.completion(
+      _history,
+      maxTokens: 256,
       temperature: 0.7,
       stopSequences: ['<|end|>', '</s>'],
-    ));
+    );
     
     // Add assistant response
     _history.add(ChatMessage(role: 'assistant', content: result.text));
@@ -420,7 +505,10 @@ class ConversationManager {
     return result.text;
   }
 
-  void clearHistory() => _history.clear();
+  void clearHistory() {
+    lm.rewind(); // Clear native conversation state
+    _history.clear();
+  }
   
   List<ChatMessage> get history => List.unmodifiable(_history);
   
@@ -440,12 +528,14 @@ class ConversationManager {
       _history.clear();
       _history.addAll(systemMessages);
       _history.addAll(recentMessages);
+      
+      lm.rewind(); // Reset native state for new conversation
     }
   }
 }
 
 // Usage
-final conversation = ConversationManager(context);
+final conversation = ConversationManager(lm);
 conversation.addSystemMessage('You are a helpful coding assistant.');
 
 final response1 = await conversation.sendMessage('How do I create a ListView in Flutter?');
@@ -455,101 +545,28 @@ print('Conversation has ${conversation.messageCount} messages');
 conversation.trimHistory(maxMessages: 10);
 ```
 
-## Core Concepts
-
-### Context Management
-
-The `CactusContext` is the main interface for model operations:
-
-```dart
-final context = await CactusContext.init(CactusInitParams(
-  modelPath: '/path/to/model.gguf',     // Model file path
-  contextSize: 4096,                    // Context window size
-  batchSize: 512,                       // Batch size for processing
-  threads: 4,                           // CPU threads
-  gpuLayers: 99,                        // GPU layers (0 = CPU only)
-  chatTemplate: 'chatml',               // Chat template
-  onInitProgress: (progress, status, isError) {
-    if (isError) {
-      print('Error: $status');
-    } else {
-      print('$status ${progress != null ? '${(progress * 100).toInt()}%' : ''}');
-    }
-  },
-));
-```
-
-### Message Format
-
-Cactus uses a simple message format compatible with most chat models:
-
-```dart
-class ChatMessage {
-  final String role;    // 'system', 'user', or 'assistant'
-  final String content; // Message content
-  
-  ChatMessage({required this.role, required this.content});
-}
-
-final messages = [
-  ChatMessage(role: 'system', content: 'You are a helpful assistant.'),
-  ChatMessage(role: 'user', content: 'What is the capital of France?'),
-  ChatMessage(role: 'assistant', content: 'The capital of France is Paris.'),
-  ChatMessage(role: 'user', content: 'What about Germany?'),
-];
-```
-
-### Generation Workflow
-
-The standard generation process:
-
-```dart
-// 1. Initialize context
-final context = await CactusContext.init(params);
-
-// 2. Configure completion parameters
-final completionParams = CactusCompletionParams(
-  messages: messages,
-  maxPredictedTokens: 256,
-  temperature: 0.7,
-);
-
-// 3. Generate response
-final result = await context.completion(completionParams);
-
-// 4. Use the result
-print('Response: ${result.text}');
-print('Tokens predicted: ${result.tokensPredicted}');
-
-// 5. Clean up when done
-context.free();
-```
-
 ## Multimodal (Vision)
 
 ### Basic Image Analysis
 
 ```dart
 class VisionAnalyzer {
-  final CactusContext context;
+  final CactusVLM vlm;
   
-  VisionAnalyzer(this.context);
+  VisionAnalyzer(this.vlm);
 
   Future<String> analyzeImage(String imagePath, String question) async {
     // Ensure multimodal is enabled
-    if (!context.isMultimodalEnabled()) {
+    if (!vlm.isMultimodalEnabled) {
       throw Exception('Multimodal support not initialized');
     }
 
-    final result = await context.multimodalCompletion(
-      CactusCompletionParams(
-        messages: [
-          ChatMessage(role: 'user', content: question),
-        ],
-        maxPredictedTokens: 300,
-        temperature: 0.3, // Lower temperature for more accurate descriptions
-      ),
-      [imagePath], // List of image paths
+    final result = await vlm.completion([
+      ChatMessage(role: 'user', content: question),
+    ], 
+      imagePaths: [imagePath],
+      maxTokens: 300,
+      temperature: 0.3, // Lower temperature for more accurate descriptions
     );
 
     return result.text;
@@ -568,7 +585,7 @@ class VisionAnalyzer {
 }
 
 // Usage
-final analyzer = VisionAnalyzer(context);
+final analyzer = VisionAnalyzer(vlm);
 final description = await analyzer.describeImage('/path/to/image.jpg');
 final answer = await analyzer.answerImageQuestion(
   '/path/to/chart.png', 
@@ -582,7 +599,6 @@ final answer = await analyzer.answerImageQuestion(
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cactus/cactus.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:image_picker/image_picker.dart';
 
 class VisionChatScreen extends StatefulWidget {
@@ -591,7 +607,7 @@ class VisionChatScreen extends StatefulWidget {
 }
 
 class _VisionChatScreenState extends State<VisionChatScreen> {
-  CactusContext? _context;
+  CactusVLM? _vlm;
   List<ChatMessage> _messages = [];
   String? _selectedImagePath;
   bool _isLoading = true;
@@ -605,22 +621,20 @@ class _VisionChatScreenState extends State<VisionChatScreen> {
 
   @override
   void dispose() {
-    _context?.free();
+    _vlm?.dispose();
     super.dispose();
   }
 
   Future<void> _initializeModel() async {
     try {
-      final appDir = await getApplicationDocumentsDirectory();
-      
-      _context = await CactusContext.init(CactusInitParams(
-        modelUrl: 'https://huggingface.co/ggml-org/SmolVLM-256M-Instruct-GGUF/resolve/main/SmolVLM-256M-Instruct-Q8_0.gguf',
-        mmprojUrl: 'https://huggingface.co/ggml-org/SmolVLM-256M-Instruct-GGUF/resolve/main/mmproj-SmolVLM-256M-Instruct-Q8_0.gguf',
+      _vlm = await CactusVLM.init(
+        modelUrl: 'https://huggingface.co/Cactus-Compute/Gemma3-4B-Instruct-GGUF/resolve/main/gemma-3-4b-it-Q4_K_M.gguf',
+        visionUrl: 'https://huggingface.co/Cactus-Compute/Gemma3-4B-Instruct-GGUF/resolve/main/mmproj-model-f16.gguf',
         contextSize: 4096,
-        onInitProgress: (progress, status, isError) {
+        onProgress: (progress, status, isError) {
           print('$status ${progress != null ? '${(progress * 100).toInt()}%' : ''}');
         },
-      ));
+      );
 
       setState(() => _isLoading = false);
     } catch (e) {
@@ -641,7 +655,7 @@ class _VisionChatScreenState extends State<VisionChatScreen> {
   }
 
   Future<void> _sendMessage(String text) async {
-    if (_context == null) return;
+    if (_vlm == null) return;
 
     final isMultimodal = _selectedImagePath != null;
     
@@ -650,6 +664,7 @@ class _VisionChatScreenState extends State<VisionChatScreen> {
       setState(() {
         _messages.clear();
       });
+      _vlm!.rewind(); // Reset native conversation state
     }
     _lastWasMultimodal = isMultimodal;
 
@@ -663,24 +678,34 @@ class _VisionChatScreenState extends State<VisionChatScreen> {
     String currentResponse = '';
 
     try {
-      final params = CactusCompletionParams(
-        messages: List.from(_messages)..removeLast(),
-        maxPredictedTokens: 400,
-        temperature: isMultimodal ? 0.3 : 0.7, // Lower temp for vision
-        onNewToken: (token) {
-          currentResponse += token;
-          setState(() {
-            _messages.last = ChatMessage(role: 'assistant', content: currentResponse);
-          });
-          return true;
-        },
-      );
-
-      CactusCompletionResult result;
+      CactusResult result;
       if (isMultimodal && _selectedImagePath != null) {
-        result = await _context!.multimodalCompletion(params, [_selectedImagePath!]);
+        result = await _vlm!.completion(
+          List.from(_messages)..removeLast(),
+          imagePaths: [_selectedImagePath!],
+          maxTokens: 400,
+          temperature: 0.3, // Lower temp for vision
+          onToken: (token) {
+            currentResponse += token;
+            setState(() {
+              _messages.last = ChatMessage(role: 'assistant', content: currentResponse);
+            });
+            return true;
+          },
+        );
       } else {
-        result = await _context!.completion(params);
+        result = await _vlm!.completion(
+          List.from(_messages)..removeLast(),
+          maxTokens: 400,
+          temperature: 0.7,
+          onToken: (token) {
+            currentResponse += token;
+            setState(() {
+              _messages.last = ChatMessage(role: 'assistant', content: currentResponse);
+            });
+            return true;
+          },
+        );
       }
 
       setState(() {
@@ -713,7 +738,10 @@ class _VisionChatScreenState extends State<VisionChatScreen> {
           ),
           IconButton(
             icon: Icon(Icons.clear),
-            onPressed: () => setState(() => _messages.clear()),
+            onPressed: () {
+              setState(() => _messages.clear());
+              _vlm?.rewind();
+            },
           ),
         ],
       ),
@@ -847,21 +875,9 @@ class _MessageInputState extends State<_MessageInput> {
 import 'dart:io';
 import 'dart:convert';
 import 'package:cactus/cactus.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:image/image.dart' as img;
-import 'package:path/path.dart' as path;
 
 class ImageProcessor {
-  static Future<String> downloadAndProcessImage(String imageUrl) async {
-    // Download image from URL
-    final tempDir = await getTemporaryDirectory();
-    final fileName = 'temp_image_${DateTime.now().millisecondsSinceEpoch}.jpg';
-    final filePath = '${tempDir.path}/$fileName';
-    
-    await downloadImage(imageUrl, filePath: filePath);
-    return filePath;
-  }
-
   static Future<String> resizeImageIfNeeded(String imagePath) async {
     final file = File(imagePath);
     final image = img.decodeImage(await file.readAsBytes());
@@ -876,8 +892,7 @@ class ImageProcessor {
         height: image.height > image.width ? 1024 : null,
       );
       
-      final tempDir = await getTemporaryDirectory();
-      final resizedPath = '${tempDir.path}/resized_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final resizedPath = '${file.parent.path}/resized_${DateTime.now().millisecondsSinceEpoch}.jpg';
       await File(resizedPath).writeAsBytes(img.encodeJpg(resized));
       
       return resizedPath;
@@ -887,21 +902,18 @@ class ImageProcessor {
   }
 
   static Future<List<String>> extractTextFromImage(
-    CactusContext context, 
+    CactusVLM vlm, 
     String imagePath
   ) async {
-    final result = await context.multimodalCompletion(
-      CactusCompletionParams(
-        messages: [
-          ChatMessage(
-            role: 'user',
-            content: 'Extract all text visible in this image. List each text element on a new line.',
-          ),
-        ],
-        maxPredictedTokens: 500,
-        temperature: 0.1,
+    final result = await vlm.completion([
+      ChatMessage(
+        role: 'user',
+        content: 'Extract all text visible in this image. List each text element on a new line.',
       ),
-      [imagePath],
+    ], 
+      imagePaths: [imagePath],
+      maxTokens: 500,
+      temperature: 0.1,
     );
 
     return result.text
@@ -912,15 +924,13 @@ class ImageProcessor {
   }
 
   static Future<Map<String, dynamic>> analyzeImageStructure(
-    CactusContext context,
+    CactusVLM vlm,
     String imagePath
   ) async {
-    final result = await context.multimodalCompletion(
-      CactusCompletionParams(
-        messages: [
-          ChatMessage(
-            role: 'user',
-            content: '''Analyze this image and provide a structured description in JSON format:
+    final result = await vlm.completion([
+      ChatMessage(
+        role: 'user',
+        content: '''Analyze this image and provide a structured description in JSON format:
 {
   "main_objects": ["object1", "object2"],
   "colors": ["color1", "color2"],
@@ -929,12 +939,11 @@ class ImageProcessor {
   "text_present": true/false,
   "mood_or_atmosphere": "description"
 }''',
-          ),
-        ],
-        maxPredictedTokens: 400,
-        temperature: 0.2,
       ),
-      [imagePath],
+    ], 
+      imagePaths: [imagePath],
+      maxTokens: 400,
+      temperature: 0.2,
     );
 
     try {
@@ -952,15 +961,15 @@ class ImageProcessor {
 
 ```dart
 class EmbeddingService {
-  final CactusContext context;
+  final CactusLM lm;
   
-  EmbeddingService(this.context);
+  EmbeddingService(this.lm);
 
-  Future<List<double>> getEmbedding(String text) async {
-    return await context.embedding(text);
+  List<double> getEmbedding(String text) {
+    return lm.embedding(text);
   }
 
-  Future<double> cosineSimilarity(List<double> a, List<double> b) async {
+  double cosineSimilarity(List<double> a, List<double> b) {
     if (a.length != b.length) throw ArgumentError('Vectors must have same length');
     
     double dotProduct = 0.0;
@@ -976,17 +985,17 @@ class EmbeddingService {
     return dotProduct / (math.sqrt(normA) * math.sqrt(normB));
   }
 
-  Future<List<DocumentMatch>> findSimilarDocuments(
+  List<DocumentMatch> findSimilarDocuments(
     String query,
     List<String> documents,
     {double threshold = 0.7}
-  ) async {
-    final queryEmbedding = await getEmbedding(query);
+  ) {
+    final queryEmbedding = getEmbedding(query);
     final matches = <DocumentMatch>[];
     
     for (int i = 0; i < documents.length; i++) {
-      final docEmbedding = await getEmbedding(documents[i]);
-      final similarity = await cosineSimilarity(queryEmbedding, docEmbedding);
+      final docEmbedding = getEmbedding(documents[i]);
+      final similarity = cosineSimilarity(queryEmbedding, docEmbedding);
       
       if (similarity >= threshold) {
         matches.add(DocumentMatch(
@@ -1015,8 +1024,8 @@ class DocumentMatch {
 }
 
 // Usage
-final embeddingService = EmbeddingService(context);
-final matches = await embeddingService.findSimilarDocuments(
+final embeddingService = EmbeddingService(lm);
+final matches = embeddingService.findSimilarDocuments(
   'machine learning algorithms',
   [
     'Deep learning neural networks',
@@ -1032,227 +1041,194 @@ for (final match in matches) {
 }
 ```
 
+## Text-to-Speech (TTS)
+
+Cactus provides powerful text-to-speech capabilities, allowing you to generate high-quality audio directly from text.
+
+> **Note**: To play the generated audio, you'll need an audio player package like [just_audio](https://pub.dev/packages/just_audio) or [audioplayers](https://pub.dev/packages/audioplayers).
+
+### Basic Speech Generation
+
+```dart
+import 'package:cactus/cactus.dart';
+
+class SpeechGenerator {
+  final CactusTTS tts;
+
+  SpeechGenerator(this.tts);
+
+  Future<CactusResult> speak(String text) async {
+    try {
+      final result = await tts.generate(
+        text,
+        maxTokens: 1024,
+        temperature: 0.7,
+      );
+
+      print("Speech generation completed for: '$text'");
+      return result;
+    } catch (e) {
+      print('Error generating speech: $e');
+      rethrow;
+    }
+  }
+}
+```
+
+### Complete TTS Example Widget
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:cactus/cactus.dart';
+
+class TTSDemoWidget extends StatefulWidget {
+  @override
+  _TTSDemoWidgetState createState() => _TTSDemoWidgetState();
+}
+
+class _TTSDemoWidgetState extends State<TTSDemoWidget> {
+  CactusTTS? _tts;
+  final TextEditingController _controller = TextEditingController(
+    text: 'Hello, this is a test of the text-to-speech system in Flutter.'
+  );
+  bool _isGenerating = false;
+  bool _isInitializing = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeTTS();
+  }
+
+  @override
+  void dispose() {
+    _tts?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _initializeTTS() async {
+    try {
+      _tts = await CactusTTS.init(
+        modelUrl: 'https://example.com/tts-model.gguf',
+        contextSize: 1024,
+        threads: 4,
+      );
+      
+      setState(() => _isInitializing = false);
+    } catch (e) {
+      print('Failed to initialize TTS: $e');
+      setState(() => _isInitializing = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to initialize TTS: $e'))
+      );
+    }
+  }
+
+  Future<void> _generateSpeech() async {
+    if (_tts == null || _controller.text.trim().isEmpty) return;
+
+    setState(() => _isGenerating = true);
+
+    try {
+      final result = await _tts!.generate(
+        _controller.text.trim(),
+        maxTokens: 512,
+        temperature: 0.7,
+      );
+
+      print("Speech generated successfully: ${result.text.length} characters");
+      
+      // In a real app, you would process the audio result here
+      // and use an audio player to play the generated speech
+
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error generating speech: $e'))
+      );
+    } finally {
+      setState(() => _isGenerating = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isInitializing) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Initializing TTS...'),
+          ],
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('Text-to-Speech', style: Theme.of(context).textTheme.headlineSmall),
+          SizedBox(height: 16),
+          TextField(
+            controller: _controller,
+            decoration: InputDecoration(
+              border: OutlineInputBorder(),
+              labelText: 'Enter text to speak',
+            ),
+            maxLines: 3,
+          ),
+          SizedBox(height: 16),
+          ElevatedButton.icon(
+            onPressed: (_isGenerating || _tts == null) ? null : _generateSpeech,
+            icon: _isGenerating 
+              ? SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+              : Icon(Icons.volume_up),
+            label: Text(_isGenerating ? 'Generating...' : 'Generate Speech'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+```
+
 ## Advanced Features
 
-### Structured Output with JSON Schema
-
-```dart
-class StructuredOutputService {
-  final CactusContext context;
-  
-  StructuredOutputService(this.context);
-
-  Future<Map<String, dynamic>> generateStructuredResponse(
-    String prompt,
-    Map<String, dynamic> jsonSchema,
-  ) async {
-    final result = await context.completionSmart(
-      CactusCompletionParams(
-        messages: [ChatMessage(role: 'user', content: prompt)],
-        maxPredictedTokens: 400,
-        temperature: 0.3,
-        responseFormat: ResponseFormat.jsonSchema(schema: jsonSchema),
-      ),
-    );
-
-    return jsonDecode(result.text);
-  }
-
-  Future<Map<String, dynamic>> extractPersonInfo(String text) async {
-    final schema = {
-      'type': 'object',
-      'properties': {
-        'name': {'type': 'string'},
-        'age': {'type': 'integer'},
-        'occupation': {'type': 'string'},
-        'location': {'type': 'string'},
-        'skills': {
-          'type': 'array',
-          'items': {'type': 'string'}
-        }
-      },
-      'required': ['name']
-    };
-
-    return await generateStructuredResponse(
-      'Extract person information from this text: $text',
-      schema,
-    );
-  }
-}
-
-// Usage
-final service = StructuredOutputService(context);
-final personInfo = await service.extractPersonInfo(
-  'John Smith is a 32-year-old software engineer from San Francisco. He specializes in Flutter development and machine learning.'
-);
-print(personInfo); // {'name': 'John Smith', 'age': 32, ...}
-```
-
-### Tool Calling
-
-```dart
-class WeatherService {
-  Future<Map<String, dynamic>> getCurrentWeather(String location) async {
-    // Simulate API call
-    await Future.delayed(Duration(seconds: 1));
-    return {
-      'location': location,
-      'temperature': 22,
-      'condition': 'sunny',
-      'humidity': 65
-    };
-  }
-}
-
-class ToolCallingExample {
-  final CactusContext context;
-  final WeatherService weatherService = WeatherService();
-  
-  ToolCallingExample(this.context);
-
-  Future<String> chatWithTools(String userMessage) async {
-    // Setup tools
-    final tools = Tools();
-    
-    tools.addSimpleTool(
-      name: 'get_weather',
-      description: 'Get current weather for a location',
-      parameters: {
-        'type': 'object',
-        'properties': {
-          'location': {
-            'type': 'string',
-            'description': 'The city and state/country'
-          }
-        },
-        'required': ['location']
-      },
-      function: (args) async {
-        final location = args['location'] as String;
-        return await weatherService.getCurrentWeather(location);
-      },
-    );
-
-    // Use smart completion with tools
-    final result = await context.completionSmart(
-      CactusCompletionParams(
-        messages: [
-          ChatMessage(role: 'system', content: 'You are a helpful assistant.'),
-          ChatMessage(role: 'user', content: userMessage),
-        ],
-        maxPredictedTokens: 300,
-        temperature: 0.7,
-      ),
-      tools: tools,
-    );
-
-    return result.text;
-  }
-}
-
-// Usage
-final toolExample = ToolCallingExample(context);
-final response = await toolExample.chatWithTools(
-  'What\'s the weather like in New York?'
-);
-print(response);
-```
-
-### Performance Optimization
-
-```dart
-class OptimizedChatService {
-  final CactusContext context;
-  final int maxContextTokens;
-  List<ChatMessage> _conversationHistory = [];
-  
-  OptimizedChatService(this.context) : maxContextTokens = context.getNCtx() ?? 4096;
-
-  Future<String> sendMessage(String userMessage) async {
-    // Add user message
-    _conversationHistory.add(ChatMessage(role: 'user', content: userMessage));
-    
-    // Optimize context window usage
-    final optimizedHistory = await _optimizeHistory();
-    
-    // Generate response with optimized parameters
-    final result = await context.completion(CactusCompletionParams(
-      messages: optimizedHistory,
-      maxPredictedTokens: _calculateOptimalTokens(),
-      temperature: 0.7,
-      
-      // Performance optimizations
-      threads: 4, // Use multiple threads
-      topK: 40,   // Limit sampling space
-      topP: 0.9,  // Nucleus sampling
-      
-      // Reduce repetition
-      penaltyRepeat: 1.1,
-      penaltyLastN: 64,
-    ));
-    
-    // Add response to history
-    _conversationHistory.add(ChatMessage(role: 'assistant', content: result.text));
-    
-    return result.text;
-  }
-
-  Future<List<ChatMessage>> _optimizeHistory() async {
-    // Keep system message + recent messages within context limit
-    final systemMessages = _conversationHistory.where((m) => m.role == 'system').toList();
-    final otherMessages = _conversationHistory.where((m) => m.role != 'system').toList();
-    
-    // Estimate tokens (rough approximation)
-    int totalTokens = 0;
-    List<ChatMessage> optimized = [...systemMessages];
-    
-    // Add messages from most recent backwards
-    for (int i = otherMessages.length - 1; i >= 0; i--) {
-      final message = otherMessages[i];
-      final estimatedTokens = message.content.length ~/ 4; // Rough estimate
-      
-      if (totalTokens + estimatedTokens < maxContextTokens * 0.8) { // Leave 20% for response
-        optimized.insert(systemMessages.length, message);
-        totalTokens += estimatedTokens;
-      } else {
-        break;
-      }
-    }
-    
-    return optimized;
-  }
-
-  int _calculateOptimalTokens() {
-    final usedTokens = _conversationHistory
-        .map((m) => m.content.length ~/ 4)
-        .fold(0, (sum, tokens) => sum + tokens);
-    
-    return math.min(512, maxContextTokens - usedTokens - 100); // Leave buffer
-  }
-
-  void clearHistory() => _conversationHistory.clear();
-}
-```
-
-## Best Practices
-
-### Memory Management
+### Best Practices
 
 ```dart
 class CactusManager {
-  CactusContext? _context;
+  CactusLM? _lm;
+  CactusVLM? _vlm;
+  CactusTTS? _tts;
   
-  Future<void> initialize() async {
-    _context = await CactusContext.init(/* params */);
+  Future<void> initializeLM() async {
+    _lm = await CactusLM.init(/* params */);
+  }
+  
+  Future<void> initializeVLM() async {
+    _vlm = await CactusVLM.init(/* params */);
+  }
+  
+  Future<void> initializeTTS() async {
+    _tts = await CactusTTS.init(/* params */);
   }
   
   Future<void> dispose() async {
-    _context?.free(); // Always free the context
-    _context = null;
+    _lm?.dispose();
+    _vlm?.dispose(); 
+    _tts?.dispose();
+    _lm = null;
+    _vlm = null;
+    _tts = null;
   }
   
-  bool get isInitialized => _context != null;
+  bool get isLMInitialized => _lm != null;
+  bool get isVLMInitialized => _vlm != null;
+  bool get isTTSInitialized => _tts != null;
 }
 
 // In your app
@@ -1268,7 +1244,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _cactusManager.initialize();
+    _cactusManager.initializeLM();
   }
   
   @override
@@ -1293,9 +1269,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
 ```dart
 class RobustChatService {
-  final CactusContext context;
+  final CactusLM lm;
   
-  RobustChatService(this.context);
+  RobustChatService(this.lm);
 
   Future<String> generateWithRetry(
     String prompt, {
@@ -1304,25 +1280,19 @@ class RobustChatService {
   }) async {
     for (int attempt = 0; attempt < maxRetries; attempt++) {
       try {
-        final result = await context.completion(CactusCompletionParams(
-          messages: [ChatMessage(role: 'user', content: prompt)],
-          maxPredictedTokens: 256,
-        ));
+        final result = await lm.completion([
+          ChatMessage(role: 'user', content: prompt)
+        ], maxTokens: 256);
         
         if (result.text.trim().isNotEmpty) {
           return result.text;
         }
         
-        throw CactusCompletionException('Empty response generated');
-        
-      } on CactusCompletionException catch (e) {
-        if (attempt == maxRetries - 1) rethrow;
-        print('Attempt ${attempt + 1} failed: ${e.message}');
-        await Future.delayed(retryDelay);
+        throw Exception('Empty response generated');
         
       } catch (e) {
         if (attempt == maxRetries - 1) rethrow;
-        print('Unexpected error on attempt ${attempt + 1}: $e');
+        print('Attempt ${attempt + 1} failed: $e');
         await Future.delayed(retryDelay);
       }
     }
@@ -1332,84 +1302,34 @@ class RobustChatService {
 }
 ```
 
-### Monitoring & Analytics
-
-```dart
-class CactusAnalytics {
-  static void trackCompletion({
-    required int tokensPredicted,
-    required int tokensEvaluated,
-    required Duration duration,
-    required String modelName,
-  }) {
-    final tokensPerSecond = tokensPredicted / duration.inMilliseconds * 1000;
-    
-    // Log performance metrics
-    print('Performance: ${tokensPerSecond.toStringAsFixed(1)} tokens/sec');
-    print('Efficiency: ${tokensEvaluated}/${tokensPredicted} eval/pred ratio');
-    
-    // Send to your analytics service
-    // FirebaseAnalytics.instance.logEvent(name: 'cactus_completion', parameters: {...});
-  }
-
-  static void trackError(String error, String context) {
-    print('Cactus Error in $context: $error');
-    // Report to crash analytics
-    // FirebaseCrashlytics.instance.recordError(error, null);
-  }
-}
-
-// Usage in completion
-final stopwatch = Stopwatch()..start();
-try {
-  final result = await context.completion(params);
-  stopwatch.stop();
-  
-  CactusAnalytics.trackCompletion(
-    tokensPredicted: result.tokensPredicted,
-    tokensEvaluated: result.tokensEvaluated,
-    duration: stopwatch.elapsed,
-    modelName: 'your-model-name',
-  );
-  
-  return result.text;
-} catch (e) {
-  CactusAnalytics.trackError(e.toString(), 'text_completion');
-  rethrow;
-}
-```
-
 ## Troubleshooting
 
 ### Common Issues
 
 **Model Loading Fails**
 ```dart
-// Check model file exists and is readable
-Future<bool> validateModelFile(String modelPath) async {
-  final file = File(modelPath);
-  if (!await file.exists()) {
-    print('Model file not found: $modelPath');
+// Check model download and initialization
+Future<bool> validateModel(String modelUrl) async {
+  try {
+    final lm = await CactusLM.init(
+      modelUrl: modelUrl,
+      contextSize: 1024, // Start small
+    );
+    lm.dispose();
+    return true;
+  } catch (e) {
+    print('Model validation failed: $e');
     return false;
   }
-  
-  final size = await file.length();
-  if (size < 1024 * 1024) { // Less than 1MB is suspicious
-    print('Model file seems too small: ${size} bytes');
-    return false;
-  }
-  
-  return true;
 }
 ```
 
 **Out of Memory Errors**
 ```dart
-// Reduce context size and batch size
-final params = CactusInitParams(
-  modelPath: modelPath,
+// Reduce memory usage
+final lm = await CactusLM.init(
+  modelUrl: modelUrl,
   contextSize: 2048,     // Reduce from 4096
-  batchSize: 256,        // Reduce from 512
   gpuLayers: 0,          // Use CPU only if GPU memory limited
 );
 ```
@@ -1417,301 +1337,12 @@ final params = CactusInitParams(
 **Slow Generation**
 ```dart
 // Optimize for speed
-final params = CactusCompletionParams(
-  messages: messages,
-  maxPredictedTokens: 100,  // Reduce output length
-  temperature: 0.3,         // Lower temperature = faster
-  topK: 20,                // Reduce sampling space
-  threads: 4,              // Use multiple CPU threads
+final result = await lm.completion(
+  messages,
+  maxTokens: 100,  // Reduce output length
+  temperature: 0.3, // Lower temperature = faster
+  topK: 20,        // Reduce sampling space
 );
 ```
 
-**Multimodal Issues**
-```dart
-// Check multimodal initialization
-if (!context.isMultimodalEnabled()) {
-  throw Exception('Multimodal projector not loaded');
-}
-
-if (!context.supportsVision()) {
-  throw Exception('Model does not support vision');
-}
-
-// Validate image file
-Future<bool> validateImageFile(String imagePath) async {
-  final file = File(imagePath);
-  if (!await file.exists()) return false;
-  
-  // Check file extension
-  final extension = path.extension(imagePath).toLowerCase();
-  if (!['.jpg', '.jpeg', '.png', '.bmp'].contains(extension)) {
-    return false;
-  }
-  
-  return true;
-}
-```
-
-### Debug Information
-
-```dart
-class CactusDebugger {
-  static void printModelInfo(CactusContext context) {
-    print('Model Info:');
-    print('  Context Size: ${context.getNCtx()}');
-    print('  Embedding Dims: ${context.getNEmbd()}');
-    print('  Model Desc: ${context.getModelDesc()}');
-    print('  Model Size: ${context.getModelSize()} bytes');
-    print('  Model Params: ${context.getModelParams()}');
-    print('  Multimodal: ${context.isMultimodalEnabled()}');
-    print('  Vision Support: ${context.supportsVision()}');
-    print('  Audio Support: ${context.supportsAudio()}');
-  }
-
-  static void printCompletionResult(CactusCompletionResult result) {
-    print('Completion Result:');
-    print('  Text Length: ${result.text.length}');
-    print('  Tokens Predicted: ${result.tokensPredicted}');
-    print('  Tokens Evaluated: ${result.tokensEvaluated}');
-    print('  Truncated: ${result.truncated}');
-    print('  Stopped EOS: ${result.stoppedEos}');
-    print('  Stopped Word: ${result.stoppedWord}');
-    print('  Stopped Limit: ${result.stoppedLimit}');
-    if (result.stoppingWord.isNotEmpty) {
-      print('  Stopping Word: "${result.stoppingWord}"');
-    }
-  }
-}
-```
-
-### Performance Monitoring
-
-```dart
-class PerformanceMonitor {
-  static const int _historySize = 10;
-  static final List<Duration> _completionTimes = [];
-  static final List<double> _tokensPerSecond = [];
-
-  static void recordCompletion(Duration time, int tokens) {
-    _completionTimes.add(time);
-    _tokensPerSecond.add(tokens / time.inMilliseconds * 1000);
-    
-    if (_completionTimes.length > _historySize) {
-      _completionTimes.removeAt(0);
-      _tokensPerSecond.removeAt(0);
-    }
-  }
-
-  static Map<String, double> getAverageMetrics() {
-    if (_completionTimes.isEmpty) return {};
-    
-    final avgTime = _completionTimes
-        .map((d) => d.inMilliseconds)
-        .reduce((a, b) => a + b) / _completionTimes.length;
-    
-    final avgTokensPerSec = _tokensPerSecond
-        .reduce((a, b) => a + b) / _tokensPerSecond.length;
-    
-    return {
-      'avgCompletionTime': avgTime,
-      'avgTokensPerSecond': avgTokensPerSec,
-    };
-  }
-}
-```
-
 For more examples and advanced usage, check out the [example app](examples/flutter/) in the repository.
-
-## Text-to-Speech (TTS)
-
-Cactus provides powerful text-to-speech capabilities, allowing you to generate high-quality audio directly from text using a vocoder model.
-
-> **Note**: To play the generated audio, you'll need an audio player package like [just_audio](https://pub.dev/packages/just_audio) or [audioplayers](https://pub.dev/packages/audioplayers).
-
-### Setup TTS Model
-
-```dart
-Future<CactusContext?> setupTTS(String modelPath, String vocoderPath) async {
-  try {
-    // Initialize the base model (required for TTS prompt formatting)
-    final context = await CactusContext.init(CactusInitParams(
-      modelPath: modelPath,
-      contextSize: 2048,
-    ));
-
-    // Initialize the vocoder
-    await context.initVocoder(vocoderPath);
-    
-    if (context.isVocoderEnabled()) {
-      print('TTS initialized successfully. Type: ${context.getTTSType()}');
-      return context;
-    } else {
-      print('Failed to enable vocoder.');
-      context.free();
-      return null;
-    }
-  } catch (e) {
-    print('Error setting up TTS: $e');
-    return null;
-  }
-}
-
-// Usage
-// final ttsContext = await setupTTS('path/to/text-model.gguf', 'path/to/vocoder.gguf');
-```
-
-### Basic Speech Generation
-
-```dart
-import 'dart:typed_data';
-import 'package:audioplayers/audioplayers.dart';
-
-class SpeechGenerator {
-  final CactusContext context;
-  final AudioPlayer audioPlayer = AudioPlayer();
-
-  SpeechGenerator(this.context);
-
-  Future<void> speak(String text) async {
-    if (!context.isVocoderEnabled()) {
-      print('TTS not enabled.');
-      return;
-    }
-
-    try {
-      // 1. Format the text for audio completion
-      final ttsPrompt = context.getFormattedAudioCompletion('{}', text);
-
-      // 2. Get guide tokens to direct the generation
-      final guideTokens = context.getAudioGuideTokens(text);
-      
-      // 3. Generate the audio tokens
-      final result = await context.completion(CactusCompletionParams(
-        messages: [ChatMessage(role: 'user', content: ttsPrompt)],
-        maxPredictedTokens: 1024, // Adjust as needed for longer text
-        temperature: 0.7,
-        // Guide tokens can be set here if the model requires it
-      ));
-      
-      // The raw audio tokens are part of the output but often need decoding
-      // For many models, you may need to implement custom token filtering
-      // and then use decodeAudioTokens.
-
-      // A more direct approach for some models might be available.
-      // The following is a placeholder for a complete audio generation flow.
-      // This part of the API is illustrative.
-      // For a complete example, refer to the native implementations.
-      
-      // Assuming the model directly outputs playable audio tokens
-      // final audioData = context.decodeAudioTokens(audioTokens);
-      // await playAudioData(audioData);
-
-      print("Speech generation for '$text' requested. Decoding and playback logic depends on the specific TTS model integration.");
-
-    } catch (e) {
-      print('Error generating speech: $e');
-    }
-  }
-
-  // Placeholder for playing raw audio data (e.g., PCM)
-  Future<void> playAudioData(List<double> pcmData) async {
-    // Conversion from List<double> to Uint8List for playback
-    // This is highly dependent on the audio format and player library
-    // final bytes = convertPcmToWav(pcmData);
-    // await audioPlayer.play(BytesSource(bytes));
-  }
-}
-```
-
-### Complete TTS Example Widget
-
-```dart
-import 'package:flutter/material.dart';
-import 'package:cactus/cactus.dart';
-import 'package:audioplayers/audioplayers.dart';
-
-class TTSDemoWidget extends StatefulWidget {
-  final CactusContext context;
-  
-  TTSDemoWidget({required this.context});
-
-  @override
-  _TTSDemoWidgetState createState() => _TTSDemoWidgetState();
-}
-
-class _TTSDemoWidgetState extends State<TTSDemoWidget> {
-  final TextEditingController _controller = TextEditingController(
-    text: 'Hello, this is a test of the text-to-speech system in Flutter.'
-  );
-  final AudioPlayer _audioPlayer = AudioPlayer();
-  bool _isGenerating = false;
-
-  Future<void> _generateAndPlay() async {
-    if (_controller.text.trim().isEmpty) return;
-
-    setState(() => _isGenerating = true);
-
-    try {
-      // This is a simplified flow. Real implementation depends on the model.
-      // Refer to native examples for precise token handling.
-      final ttsPrompt = widget.context.getFormattedAudioCompletion('{}', _controller.text.trim());
-      
-      // For this example, we assume a direct-to-audio method is not yet exposed
-      // and we cannot complete the full audio generation and playback loop
-      // without more details on the specific TTS model's output format.
-      
-      // The API provides the building blocks:
-      // 1. getFormattedAudioCompletion
-      // 2. getAudioCompletionGuideTokens
-      // 3. completion (to get audio tokens)
-      // 4. decodeAudioTokens (to get raw PCM data)
-      // 5. A player (like audioplayers) to play the raw data
-
-      print("Audio generation flow initiated. Playback requires model-specific handling.");
-      
-      // In a real app, you would get audio data and play it:
-      // final audioData = await getAudioData(...);
-      // await _audioPlayer.play(BytesSource(audioData));
-
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error generating speech: $e'))
-      );
-    } finally {
-      setState(() => _isGenerating = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text('Text-to-Speech', style: Theme.of(context).textTheme.headlineSmall),
-          SizedBox(height: 16),
-          TextField(
-            controller: _controller,
-            decoration: InputDecoration(
-              border: OutlineInputBorder(),
-              labelText: 'Enter text to speak',
-            ),
-            maxLines: 3,
-          ),
-          SizedBox(height: 16),
-          ElevatedButton.icon(
-            onPressed: _isGenerating ? null : _generateAndPlay,
-            icon: _isGenerating 
-              ? SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-              : Icon(Icons.volume_up),
-            label: Text(_isGenerating ? 'Generating...' : 'Speak'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-```
-
-This documentation now includes the Text-to-Speech capabilities of the Cactus Flutter plugin. For more examples, check the [example app](examples/flutter/) in the repository.

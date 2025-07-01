@@ -4,6 +4,8 @@ import type {
   CompletionParams,
   CactusOAICompatibleMessage,
   NativeCompletionResult,
+  EmbeddingParams,
+  NativeEmbeddingResult,
 } from './index'
 
 export class CactusLM {
@@ -27,6 +29,13 @@ export class CactusLM {
     callback?: (data: any) => void,
   ): Promise<NativeCompletionResult> {
     return this.context.completion({ messages, ...params }, callback)
+  }
+
+  async embedding(
+    text: string,
+    params?: EmbeddingParams,
+  ): Promise<NativeEmbeddingResult> {
+    return this.context.embedding(text, params)
   }
 
   async rewind(): Promise<void> {
