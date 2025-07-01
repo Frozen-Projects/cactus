@@ -3,7 +3,7 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../flutter" && pwd)"
 
-NDK_VERSION=26.1.10909125
+NDK_VERSION=27.0.12077973
 CMAKE_TOOLCHAIN_FILE=$ANDROID_HOME/ndk/$NDK_VERSION/build/cmake/android.toolchain.cmake
 ANDROID_PLATFORM=android-21
 CMAKE_BUILD_TYPE=Release
