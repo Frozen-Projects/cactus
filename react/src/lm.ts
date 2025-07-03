@@ -63,8 +63,8 @@ export class CactusLM {
     
     Telemetry.track({
       event: 'completion',
-      tok_per_sec: (result as any).timings?.predicted_per_second || 0,
-      toks_generated: (result as any).predicted_n || 0,
+      tok_per_sec: (result as any).timings?.predicted_per_second,
+      toks_generated: (result as any).timings?.predicted_n,
       ttft: firstTokenTime ? firstTokenTime - startTime : null,
     }, this.initParams);
 

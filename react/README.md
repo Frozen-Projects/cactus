@@ -24,11 +24,12 @@ yarn add cactus-react-native react-native-fs
 import { CactusLM } from 'cactus-react-native';
 
 // Initialize a language model
-const lm = await CactusLM.init({
+const { lm, error } = await CactusLM.init({
   model: '/path/to/your/model.gguf',
   n_ctx: 2048,
   n_threads: 4,
 });
+if (error) throw error; // handle error gracefully
 
 // Generate text
 const messages = [{ role: 'user', content: 'Hello, how are you?' }];
@@ -76,14 +77,15 @@ export default function ChatApp() {
       }
 
       // Initialize language model
-      const cactusLM = await CactusLM.init({
+      const { lm, error } = await CactusLM.init({
         model: modelPath,
         n_ctx: 2048,
         n_threads: 4,
         n_gpu_layers: 99, // Use GPU acceleration
       });
+      if (error) throw error; // handle error gracefully
 
-      setLM(cactusLM);
+      setLM(lm);
       setLoading(false);
     } catch (error) {
       console.error('Failed to initialize model:', error);
