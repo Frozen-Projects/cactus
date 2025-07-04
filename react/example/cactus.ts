@@ -8,8 +8,8 @@ export type Message = CactusOAICompatibleMessage & {
 }
 
 const modelUrl = 'https://huggingface.co/ggml-org/SmolVLM-500M-Instruct-GGUF/resolve/main/SmolVLM-500M-Instruct-Q8_0.gguf';
-const mmprojUrl = 'https://huggingface.co/ggml-org/SmolVLM-500M-Instruct-GGUF/resolve/main/mmproj-SmolVLM-500M-Instruct-Q8_0.gguf';
 const modelFileName = 'SmolVLM-500M-Instruct-Q8_0.gguf';
+const mmprojUrl = 'https://huggingface.co/ggml-org/SmolVLM-500M-Instruct-GGUF/resolve/main/mmproj-SmolVLM-500M-Instruct-Q8_0.gguf';
 const mmprojFileName = 'mmproj-SmolVLM-500M-Instruct-Q8_0.gguf';
 const demoImageUrl = 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=600&fit=crop';
 
@@ -91,7 +91,7 @@ class CactusManager {
 
     this.demoImagePath = demoPath;
 
-    this.vlm = await CactusVLM.init({
+    const {vlm, error} =  await CactusVLM.init({
       model: modelPath,
       mmproj: mmprojPath,
       n_ctx: 2048,
@@ -99,6 +99,10 @@ class CactusManager {
       n_gpu_layers: 99,
       n_threads: 4,
     });
+
+    if (error) throw new Error('Error initializing Cactus VLM: ' + error);
+
+    this.vlm = vlm
 
     this.isInitialized = true;
   }

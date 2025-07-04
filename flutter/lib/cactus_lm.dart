@@ -3,9 +3,11 @@ import 'dart:async';
 import './types.dart';
 import './tools.dart';
 import './cactus_context.dart';
+import './cactus_telemetry.dart';
 
 class CactusLM {
   CactusContext? _context;
+  CactusInitParams? _initParams;
   
   CactusLM._();
 
@@ -21,7 +23,7 @@ class CactusLM {
   }) async {
     final lm = CactusLM._();
     
-    lm._context = await CactusContext.init(CactusInitParams(
+    final initParams = CactusInitParams(
       modelUrl: modelUrl,
       modelFilename: modelFilename,
       chatTemplate: chatTemplate,
@@ -30,7 +32,15 @@ class CactusLM {
       threads: threads,
       generateEmbeddings: generateEmbeddings,
       onInitProgress: onProgress,
-    ));
+    );
+    
+    try {
+      lm._context = await CactusContext.init(initParams);
+      lm._initParams = initParams;
+    } catch (e) {
+      CactusTelemetry.error(e, initParams);
+      rethrow;
+    }
     
     return lm;
   }
@@ -47,7 +57,23 @@ class CactusLM {
   }) async {
     if (_context == null) throw CactusException('CactusLM not initialized');
     
-    return await _context!.completion(
+    final startTime = DateTime.now();
+    bool firstTokenReceived = false;
+    DateTime? firstTokenTime;
+    
+    // Wrap the callback to capture first token timing
+    CactusTokenCallback? wrappedCallback;
+    if (onToken != null) {
+      wrappedCallback = (String token) {
+        if (!firstTokenReceived) {
+          firstTokenTime = DateTime.now();
+          firstTokenReceived = true;
+        }
+        return onToken(token);
+      };
+    }
+    
+    final result = await _context!.completion(
       CactusCompletionParams(
         messages: messages,
         maxPredictedTokens: maxTokens,
@@ -55,10 +81,27 @@ class CactusLM {
         topK: topK,
         topP: topP,
         stopSequences: stopSequences,
-        onNewToken: onToken,
+        onNewToken: wrappedCallback,
       ),
       tools: tools,
     );
+    
+    // Track telemetry after completion
+    if (_initParams != null) {
+      final endTime = DateTime.now();
+      final totalTime = endTime.difference(startTime).inMilliseconds;
+      final tokPerSec = totalTime > 0 ? (result.tokensPredicted * 1000.0) / totalTime : null;
+      final ttft = firstTokenTime != null ? firstTokenTime!.difference(startTime).inMilliseconds : null;
+      
+      CactusTelemetry.track({
+        'event': 'completion',
+        'tok_per_sec': tokPerSec,
+        'toks_generated': result.tokensPredicted,
+        'ttft': ttft,
+      }, _initParams!);
+    }
+    
+    return result;
   }
 
   List<double> embedding(String text) {
