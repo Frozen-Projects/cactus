@@ -91,7 +91,6 @@ class CactusManager {
 
     this.demoImagePath = demoPath;
 
-    // this.vlm = 
     const {vlm, error} =  await CactusVLM.init({
       model: modelPath,
       mmproj: mmprojPath,
