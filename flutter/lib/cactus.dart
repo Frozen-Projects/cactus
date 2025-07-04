@@ -8,6 +8,7 @@ export './tools.dart';
 export './cactus_lm.dart';
 export './cactus_vlm.dart';
 export './cactus_tts.dart';
+export './cactus_telemetry.dart';
 
 // Legacy API for backward compatibility
 export './cactus_context.dart' show CactusContext;
