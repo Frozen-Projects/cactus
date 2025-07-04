@@ -1,9 +1,13 @@
 import { Platform } from 'react-native'
 import type { ContextParams } from './index';
+// Import package.json to get version
+const packageJson = require('../package.json');
 
 interface TelemetryRecord {
   os: 'iOS' | 'Android';
   os_version: string;
+  framework: string;
+  framework_version: string;
   telemetry_payload?: Record<string, any>;
   error_payload?: Record<string, any>;
   timestamp: string;
@@ -70,6 +74,8 @@ export class Telemetry {
     const record: TelemetryRecord = {
       os: Platform.OS === 'ios' ? 'iOS' : 'Android',
       os_version: Platform.Version.toString(),
+      framework: 'react-native',
+      framework_version: packageJson.version,
       telemetry_payload: payload,
       timestamp: new Date().toISOString(),
       model_filename: Telemetry.getFilename(options.model),
@@ -90,6 +96,8 @@ export class Telemetry {
     const record: TelemetryRecord = {
       os: Platform.OS === 'ios' ? 'iOS' : 'Android',
       os_version: Platform.Version.toString(),
+      framework: 'react-native',
+      framework_version: packageJson.version,
       error_payload: errorPayload,
       timestamp: new Date().toISOString(),
       model_filename: Telemetry.getFilename(options.model),
