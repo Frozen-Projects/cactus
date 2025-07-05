@@ -1,6 +1,11 @@
+## 0.1.4
+
+* added telemetry
+
 ## 0.1.3
 
 * bug fix
+* simplified APIs
 
 ## 0.1.2
 

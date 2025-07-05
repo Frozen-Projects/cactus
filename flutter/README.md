@@ -8,7 +8,7 @@ Add to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  cactus: ^0.1.3
+  cactus: ^0.1.4
 ```
 
 Then run:
