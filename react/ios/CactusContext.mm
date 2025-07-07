@@ -1007,4 +1007,19 @@
     return result;
 }
 
+- (NSDictionary *)getDeviceInfo {
+    UIDevice *device = [UIDevice currentDevice];
+    NSString *deviceId = [[device identifierForVendor] UUIDString];
+    NSString *model = [device model];
+    NSString *os = [device systemName];
+    NSDictionary *deviceInfo = @{
+      @"deviceId": deviceId,
+      @"model": model,
+      @"make": @"Apple",
+      @"os": os
+    };
+    
+    return deviceInfo;
+}
+
 @end

@@ -3,6 +3,7 @@ import {
   initMultimodal,
   multimodalCompletion,
   LlamaContext,
+  getDeviceInfo,
 } from './index'
 import type {
   ContextParams,
@@ -10,6 +11,7 @@ import type {
   CactusOAICompatibleMessage,
   NativeCompletionResult,
 } from './index'
+import type { NativeDeviceInfo } from './NativeCactus'
 import { Telemetry } from './telemetry'
 
 interface CactusVLMReturn {
@@ -28,10 +30,12 @@ export type VLMCompletionParams = Omit<CompletionParams, 'prompt'> & {
 export class CactusVLM {
   private context: LlamaContext
   private initParams: VLMContextParams
-
-  private constructor(context: LlamaContext, initParams: VLMContextParams) {
+  private deviceInfo: NativeDeviceInfo
+  
+  private constructor(context: LlamaContext, initParams: VLMContextParams, deviceInfo: NativeDeviceInfo) {
     this.context = context
     this.initParams = initParams
+    this.deviceInfo = deviceInfo
   }
 
   static async init(
@@ -48,7 +52,8 @@ export class CactusVLM {
         const context = await initLlama(config, onProgress)
         // Explicitly disable GPU for the multimodal projector for stability.
         await initMultimodal(context.id, params.mmproj, false)
-        return {vlm: new CactusVLM(context, params), error: null}
+        const deviceInfo = await getDeviceInfo(context.id)
+        return {vlm: new CactusVLM(context, params, deviceInfo), error: null}
       } catch (e) {
         Telemetry.error(e as Error, config);
         if (configs.indexOf(config) === configs.length - 1) {
@@ -96,7 +101,7 @@ export class CactusVLM {
       toks_generated: (result as any).timings?.predicted_n,
       ttft: firstTokenTime ? firstTokenTime - startTime : null,
       num_images: params.images?.length,
-    }, this.initParams);
+    }, this.initParams, this.deviceInfo);
 
     return result;
   }

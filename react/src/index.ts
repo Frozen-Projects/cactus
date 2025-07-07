@@ -18,6 +18,7 @@ import type {
   NativeAudioCompletionResult,
   NativeAudioTokensResult,
   NativeAudioDecodeResult,
+  NativeDeviceInfo,
 } from './NativeCactus'
 import type {
   SchemaGrammarConverterPropOrder,
@@ -619,6 +620,10 @@ export const tokenize = async (contextId: number, text: string, mediaPaths?: str
   } else {
     return await Cactus.tokenize(contextId, text);
   }
+};
+
+export const getDeviceInfo = async (contextId: number): Promise<NativeDeviceInfo> => {
+  return await Cactus.getDeviceInfo(contextId);
 };
 
 export { CactusLM } from './lm';

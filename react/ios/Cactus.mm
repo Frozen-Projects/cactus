@@ -597,6 +597,20 @@ RCT_EXPORT_METHOD(decodeAudioTokens:(double)contextId
     }
 }
 
+RCT_EXPORT_METHOD(getDeviceInfo:(double)contextId
+                 withResolver:(RCTPromiseResolveBlock)resolve
+                 withRejecter:(RCTPromiseRejectBlock)reject)
+{
+    CactusContext *context = llamaContexts[[NSNumber numberWithDouble:contextId]];
+    if (context == nil) {
+        reject(@"llama_error", @"Context not found", nil);
+        return;
+    }
+    NSDictionary *deviceInfo = [context getDeviceInfo];
+    resolve(deviceInfo);
+}
+
+
 RCT_EXPORT_METHOD(releaseVocoder:(double)contextId
                  withResolver:(RCTPromiseResolveBlock)resolve
                  withRejecter:(RCTPromiseRejectBlock)reject)

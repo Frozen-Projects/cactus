@@ -72,6 +72,7 @@
 - (NSString *)getFormattedAudioCompletion:(NSString *)speakerJsonStr textToSpeak:(NSString *)textToSpeak;
 - (NSArray *)getAudioCompletionGuideTokens:(NSString *)textToSpeak;
 - (NSArray *)decodeAudioTokens:(NSArray *)tokens;
+- (NSDictionary *)getDeviceInfo;
 - (void)releaseVocoder;
 
 - (void)invalidate;

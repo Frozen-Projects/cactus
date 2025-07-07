@@ -306,6 +306,12 @@ export type NativeAudioDecodeResult = {
   audio_data: Array<number> // Float array of audio samples
 }
 
+export type NativeDeviceInfo = {
+  deviceId: string
+  model: string
+  make: string
+  os: string
+}
 export type NativeLlamaContext = {
   contextId: number
   model: {
@@ -469,6 +475,7 @@ export interface Spec extends TurboModule {
     contextId: number,
     tokens: number[],
   ): Promise<NativeAudioDecodeResult>
+  getDeviceInfo(contextId: number): Promise<NativeDeviceInfo>
   releaseVocoder(contextId: number): Promise<void>
 
   releaseContext(contextId: number): Promise<void>

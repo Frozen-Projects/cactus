@@ -1,4 +1,4 @@
-import { initLlama, LlamaContext } from './index'
+import { getDeviceInfo, initLlama, LlamaContext } from './index'
 import type {
   ContextParams,
   CompletionParams,
@@ -7,6 +7,7 @@ import type {
   EmbeddingParams,
   NativeEmbeddingResult,
 } from './index'
+import type { NativeDeviceInfo } from './NativeCactus'
 import { Telemetry } from './telemetry'
 
 interface CactusLMReturn {
@@ -17,10 +18,12 @@ interface CactusLMReturn {
 export class CactusLM {
   private context: LlamaContext
   private initParams: ContextParams
+  private deviceInfo: NativeDeviceInfo
 
-  private constructor(context: LlamaContext, initParams: ContextParams) {
+  private constructor(context: LlamaContext, initParams: ContextParams, deviceInfo: NativeDeviceInfo) {
     this.context = context
     this.initParams = initParams
+    this.deviceInfo = deviceInfo
   }
 
   static async init(
@@ -35,7 +38,8 @@ export class CactusLM {
     for (const config of configs) {
       try {
         const context = await initLlama(config, onProgress);
-        return { lm: new CactusLM(context, config), error: null };
+        const deviceInfo = await getDeviceInfo(context.id)
+        return { lm: new CactusLM(context, config, deviceInfo), error: null };
       } catch (e) {
         Telemetry.error(e as Error, config);
         if (configs.indexOf(config) === configs.length - 1) {
@@ -66,7 +70,7 @@ export class CactusLM {
       tok_per_sec: (result as any).timings?.predicted_per_second,
       toks_generated: (result as any).timings?.predicted_n,
       ttft: firstTokenTime ? firstTokenTime - startTime : null,
-    }, this.initParams);
+    }, this.initParams, this.deviceInfo);
 
     return result;
   }

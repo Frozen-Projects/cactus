@@ -6,6 +6,7 @@ import { PROJECT_ID } from './projectId';
 
 interface TelemetryRecord {
   project_id: string;
+  device_id?: string;
   os: 'iOS' | 'Android';
   os_version: string;
   framework: string;
@@ -58,11 +59,11 @@ export class Telemetry {
     }
   }
 
-  static track(payload: Record<string, any>, options: ContextParams): void {
+  static track(payload: Record<string, any>, options: ContextParams, deviceMetadata?: Record<string, any>): void {
     if (!Telemetry.instance) {
       Telemetry.autoInit();
     }
-    Telemetry.instance!.trackInternal(payload, options);
+    Telemetry.instance!.trackInternal(payload, options, deviceMetadata);
   }
 
   static error(error: Error, options: ContextParams): void {
@@ -72,9 +73,10 @@ export class Telemetry {
     Telemetry.instance!.errorInternal(error, options);
   }
 
-  private trackInternal(payload: Record<string, any>, options: ContextParams): void {
+  private trackInternal(payload: Record<string, any>, options: ContextParams, deviceMetadata?: Record<string, any>): void {
     const record: TelemetryRecord = {
       project_id: PROJECT_ID,
+      device_id: deviceMetadata?.deviceId,
       os: Platform.OS === 'ios' ? 'iOS' : 'Android',
       os_version: Platform.Version.toString(),
       framework: 'react-native',
@@ -83,7 +85,7 @@ export class Telemetry {
       timestamp: new Date().toISOString(),
       model_filename: Telemetry.getFilename(options.model),
       n_ctx: options.n_ctx,
-      n_gpu_layers: options.n_gpu_layers
+      n_gpu_layers: options.n_gpu_layers,
     };
 
     this.sendRecord(record).catch(() => {});
