@@ -2,6 +2,7 @@ package com.cactus;
 
 import androidx.annotation.NonNull;
 import android.util.Log;
+import android.provider.Settings;
 import android.os.Build;
 import android.os.Handler;
 import android.os.AsyncTask;
@@ -1078,6 +1079,46 @@ public class Cactus implements LifecycleEventListener {
       }
     }.executeOnExecutor(singleThreadExecutor);
     tasks.put(task, "decodeAudioTokens-" + contextId);
+  }
+
+  @ReactMethod
+  public void getDeviceInfo(double id, final Promise promise) {
+    AsyncTask task = new AsyncTask<Void, Void, WritableMap>() {
+      private Exception exception;
+
+      @Override
+      protected WritableMap doInBackground(Void... voids) {
+        try {
+          WritableMap deviceInfo = Arguments.createMap();
+
+          String deviceId = Settings.Secure.getString(reactContext.getContentResolver(), Settings.Secure.ANDROID_ID);
+
+          String make = Build.MANUFACTURER;
+          String model = Build.MODEL;
+          String osVersion = Build.VERSION.RELEASE;
+
+          deviceInfo.putString("deviceId", deviceId);
+          deviceInfo.putString("make", make);
+          deviceInfo.putString("model", model);
+          deviceInfo.putString("os", "Android");
+          deviceInfo.putString("osVersion", osVersion);
+
+          return deviceInfo;
+        } catch (Exception e) {
+          exception = e;
+        }
+        return null;
+      }
+
+      @Override
+      protected void onPostExecute(WritableMap result) {
+        if (exception != null) {
+          promise.reject(exception);
+          return;
+        }
+        promise.resolve(result);
+      }
+    }.executeOnExecutor(singleThreadExecutor);
   }
 
   public void releaseVocoder(double id, final Promise promise) {

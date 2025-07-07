@@ -180,6 +180,11 @@ public class CactusModule extends NativeCactusSpec {
   }
 
   @ReactMethod
+  public void getDeviceInfo(double id, Promise promise) {
+    cactus.getDeviceInfo(id, promise);
+  }
+
+  @ReactMethod
   public void releaseVocoder(double id, Promise promise) {
     cactus.releaseVocoder(id, promise);
   }

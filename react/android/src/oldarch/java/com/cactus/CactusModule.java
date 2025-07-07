@@ -179,6 +179,11 @@ public class CactusModule extends ReactContextBaseJavaModule {
   }
 
   @ReactMethod
+  public void getDeviceInfo(double id, final Promise promise) {
+    cactus.getDeviceInfo(id, promise);
+  }
+
+  @ReactMethod
   public void releaseVocoder(double id, final Promise promise) {
     cactus.releaseVocoder(id, promise);
   }

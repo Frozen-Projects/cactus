@@ -9,6 +9,7 @@ import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.modules.core.DeviceEventManagerModule;
 
 import android.util.Log;
+import android.provider.Settings;
 import android.os.Build;
 import android.content.res.AssetManager;
 
@@ -518,6 +519,24 @@ public class LlamaContext {
       toks[i] = (int) tokens.getDouble(i);
     }
     return decodeAudioTokens(this.context, toks);
+  }
+
+  public WritableMap getDeviceInfo() {
+    WritableMap deviceInfo = Arguments.createMap();
+
+    String deviceId = Settings.Secure.getString(this.reactContext.getContentResolver(), Settings.Secure.ANDROID_ID);
+
+    String make = Build.MANUFACTURER; 
+    String model = Build.MODEL;       
+    String osVersion = Build.VERSION.RELEASE; 
+
+    deviceInfo.putString("deviceId", deviceId);
+    deviceInfo.putString("make", make);
+    deviceInfo.putString("model", model);
+    deviceInfo.putString("os", "Android");
+    deviceInfo.putString("osVersion", osVersion);
+
+    return deviceInfo;
   }
 
   public void releaseVocoder() {
