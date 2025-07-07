@@ -2,7 +2,11 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const projectRoot = process.env.INIT_CWD || process.cwd();
+const projectRoot = process.env.INIT_CWD;
+
+if (!projectRoot || projectRoot === process.cwd()) {
+  return;
+}
 
 const rootIdPath = path.join(projectRoot, '.projectId.json');
 const internalIdPath = path.join(__dirname, '..', 'src', 'projectId.js');

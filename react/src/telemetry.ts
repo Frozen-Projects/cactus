@@ -2,8 +2,10 @@ import { Platform } from 'react-native'
 import type { ContextParams } from './index';
 // Import package.json to get version
 const packageJson = require('../package.json');
+import { PROJECT_ID } from './projectId.js';
 
 interface TelemetryRecord {
+  project_id: string;
   os: 'iOS' | 'Android';
   os_version: string;
   framework: string;
@@ -72,6 +74,7 @@ export class Telemetry {
 
   private trackInternal(payload: Record<string, any>, options: ContextParams): void {
     const record: TelemetryRecord = {
+      project_id: PROJECT_ID,
       os: Platform.OS === 'ios' ? 'iOS' : 'Android',
       os_version: Platform.Version.toString(),
       framework: 'react-native',
@@ -94,6 +97,7 @@ export class Telemetry {
     };
 
     const record: TelemetryRecord = {
+      project_id: PROJECT_ID,
       os: Platform.OS === 'ios' ? 'iOS' : 'Android',
       os_version: Platform.Version.toString(),
       framework: 'react-native',
