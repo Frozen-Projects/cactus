@@ -31,7 +31,8 @@
     "docgen": "typedoc src/index.ts --plugin typedoc-plugin-markdown --readme none --out docs/API",
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
-    "release": "release-it --ci"
+    "release": "release-it --ci",
+    "postinstall": "node ./scripts/postInstall.js"
   },
   "keywords": [
     "react-native",
