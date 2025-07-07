@@ -2,7 +2,7 @@ import { Platform } from 'react-native'
 import type { ContextParams } from './index';
 // Import package.json to get version
 const packageJson = require('../package.json');
-import { PROJECT_ID } from './projectId.js';
+import { PROJECT_ID } from './projectId';
 
 interface TelemetryRecord {
   project_id: string;

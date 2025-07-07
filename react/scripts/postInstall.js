@@ -9,7 +9,7 @@ if (!projectRoot || projectRoot === process.cwd()) {
 }
 
 const rootIdPath = path.join(projectRoot, '.projectId.json');
-const internalIdPath = path.join(__dirname, '..', 'src', 'projectId.js');
+const internalIdPath = path.join(__dirname, '..', 'src', 'projectId.ts');
 
 let projectId;
 try {
